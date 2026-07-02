@@ -3,13 +3,14 @@
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from src.api.auth import get_current_user, get_optional_user, fetch_clerk_profile
 from src.core.config import get_settings
 from src.core.email import send_email
+from src.core.rate_limit import limiter
 from src.database.session import get_db_dependency as get_db
 from src.database.models import User, Resume, ATSAnalysis, SkillProgress, UserFeedback
 from src.nlp.extractor import SkillExtractor
@@ -325,16 +326,18 @@ class UserFeedbackResponse(BaseModel):
 
 
 @feedback_router.post("/feedback", response_model=UserFeedbackResponse)
+@limiter.limit("5/minute")
 def submit_feedback(
-    request: UserFeedbackRequest,
+    request: Request,
+    body: UserFeedbackRequest,
     background_tasks: BackgroundTasks,
     current_user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     entry = UserFeedback(
         user_id=current_user.user_id if current_user else None,
-        category=request.category,
-        message=request.message.strip(),
+        category=body.category,
+        message=body.message.strip(),
     )
     db.add(entry)
     db.commit()

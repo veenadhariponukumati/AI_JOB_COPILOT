@@ -7,6 +7,8 @@ import traceback
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 import time
 
 from src.api.routes.analysis import router as analysis_router
@@ -16,6 +18,7 @@ from src.cache.cache_manager import get_cache
 from src.core.config import get_settings
 from src.core.exceptions import AppException
 from src.core.logger import get_logger
+from src.core.rate_limit import limiter
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -31,15 +34,21 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+app.state.limiter = limiter
+
 # ─── Middleware ───────────────────────────────────────────────────────────────
 
+# Note: "*" removed - it is meaningless (and rejected by browsers) when
+# combined with allow_credentials=True, and was masking the fact that only
+# the two explicit origins below actually work for credentialed requests.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://*.vercel.app", "*"],
+    allow_origins=["http://localhost:3000", "https://*.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SlowAPIMiddleware)
 
 
 @app.middleware("http")
@@ -60,6 +69,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
     logger.error(f"Unhandled 500 on {request.method} {request.url.path}:\n{tb}")
     return JSONResponse(status_code=500, content={"detail": f"{type(exc).__name__}: {exc}"})
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Please wait a moment and try again."},
+    )
 
 
 @app.exception_handler(AppException)

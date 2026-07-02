@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from src.api.main import app
-from src.api.routes.analysis import run_analysis
+from src.api.routes.analysis import run_analysis, _run_analysis_background
 
 
 @pytest.fixture
@@ -115,15 +115,20 @@ class TestAnalysisEndpoints:
         assert ".optimize_bullets(" not in source
 
     def test_run_analysis_has_second_pass_rag_fallback(self):
-        """Still-unmatched skills should get a non-duplicative RAG fallback pass."""
-        source = inspect.getsource(run_analysis)
+        """Still-unmatched skills should get a non-duplicative RAG fallback pass.
+
+        This logic runs in the background task (run_analysis itself just
+        enqueues the job and returns immediately, to avoid blocking the
+        request on the 60-90s LLM pipeline).
+        """
+        source = inspect.getsource(_run_analysis_background)
         assert "fallback_skill_names" in source
         assert "not in matched_keys" in source
         assert "not in queried_keys" in source
 
     def test_run_analysis_passes_debug_rag_diagnostics(self):
         """Debug tracing should receive read-only RAG diagnostics."""
-        source = inspect.getsource(run_analysis)
+        source = inspect.getsource(_run_analysis_background)
         assert "rag_diagnostics" in source
         assert "diagnostics=rag_diagnostics" in source
 

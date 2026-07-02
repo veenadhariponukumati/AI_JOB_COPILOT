@@ -109,9 +109,15 @@ class TestHybridMatchingEngine:
 
     def test_phrase_match(self, engine):
         """Test partial/phrase matching."""
+        resume_skills = {"nodejs", "machine learning"}
+        result = engine._phrase_match("node", resume_skills)
+        assert result == "nodejs"
+
+    def test_phrase_match_rejects_false_equivalence(self, engine):
+        """React and React Native are different skills - must never phrase-match."""
         resume_skills = {"react native", "machine learning"}
         result = engine._phrase_match("react", resume_skills)
-        assert result == "react native"
+        assert result is None
 
     def test_phrase_match_avoids_short(self, engine):
         """Test that short strings don't trigger phrase match."""

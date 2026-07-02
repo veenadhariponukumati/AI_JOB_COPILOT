@@ -114,8 +114,9 @@ class TestDocumentParser:
         2. Short
         """
         bullets = parser.extract_bullet_points(text)
+        bullet_texts = [b["text"] for b in bullets]
         assert len(bullets) >= 3
-        assert "Built scalable REST APIs serving 1M requests/day" in bullets
+        assert "Built scalable REST APIs serving 1M requests/day" in bullet_texts
 
     def test_extract_bullet_points_filters_short(self, parser):
         """Test that very short bullets are filtered."""

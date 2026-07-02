@@ -6,8 +6,10 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File
 from sqlalchemy.orm import Session
+
+from src.core.rate_limit import limiter
 
 from src.nlp.skill_normalizer import SkillNormalizer
 from src.api.schemas.requests import (
@@ -393,8 +395,10 @@ def _extract_skills_background(resume_id: str, resume_text: str) -> None:
 
 
 @router.post("/resume/upload", response_model=ResumeUploadResponse)
+@limiter.limit("10/minute")
 async def upload_resume(
-    request: ResumeUploadRequest,
+    request: Request,
+    body: ResumeUploadRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db_dependency),
     current_user: User = Depends(get_optional_user),
@@ -408,14 +412,14 @@ async def upload_resume(
     """
     try:
         # Parse resume
-        parsed = parser.parse_resume_text(request.text)
+        parsed = parser.parse_resume_text(body.text)
 
         # Resolve user - prefer authenticated user, fall back to anonymous
         if current_user:
             user = current_user
             user_id = current_user.user_id
         else:
-            user_id = request.user_id or uuid.uuid4()
+            user_id = body.user_id or uuid.uuid4()
             user = db.query(User).filter(User.user_id == user_id).first()
             if not user:
                 user = User(user_id=user_id)
@@ -427,8 +431,8 @@ async def upload_resume(
         # Store resume
         resume = Resume(
             user_id=user_id,
-            filename=request.filename,
-            raw_text=request.text,
+            filename=body.filename,
+            raw_text=body.text,
             parsed_text=parsed["raw_text"],
             parsed_sections=parsed["sections"],
             is_active=True,
@@ -458,7 +462,7 @@ async def upload_resume(
 
         # Skill extraction runs after the response is sent, not blocking the upload
         background_tasks.add_task(
-            _extract_skills_background, str(resume.resume_id), request.text
+            _extract_skills_background, str(resume.resume_id), body.text
         )
 
         response_data = {
@@ -467,7 +471,7 @@ async def upload_resume(
             "resume_id": resume.resume_id,
             "parsed_sections": list(parsed["sections"].keys()),
             "skill_count": 0,
-            "char_count": len(request.text),
+            "char_count": len(body.text),
         }
 
         return ResumeUploadResponse(**response_data)
@@ -480,7 +484,9 @@ async def upload_resume(
 
 
 @router.post("/resume/upload-file", response_model=ResumeUploadResponse)
+@limiter.limit("10/minute")
 async def upload_resume_file(
+    request: Request,
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db_dependency),
@@ -510,7 +516,8 @@ async def upload_resume_file(
     from src.api.schemas.requests import ResumeUploadRequest as Req
     req = Req(text=text, filename=filename)
     return await upload_resume(
-        request=req,
+        request=request,
+        body=req,
         background_tasks=background_tasks,
         db=db,
         current_user=current_user,
@@ -521,32 +528,34 @@ async def upload_resume_file(
 
 
 @router.post("/job/upload", response_model=JobDescriptionUploadResponse)
+@limiter.limit("15/minute")
 async def upload_job_description(
-    request: JobDescriptionUploadRequest,
+    request: Request,
+    body: JobDescriptionUploadRequest,
     db: Session = Depends(get_db_dependency),
 ):
     """Upload and parse a job description."""
     try:
         # Check cache
-        cache_key = cache.generate_key(request.text, prefix="jd_parse")
+        cache_key = cache.generate_key(body.text, prefix="jd_parse")
         cached = cache.get(cache_key, "jd_parse")
         if cached:
             return JobDescriptionUploadResponse(**cached)
 
         # Parse JD
-        parsed = parser.parse_job_description(request.text)
+        parsed = parser.parse_job_description(body.text)
 
         # Derive a title from the text if the caller did not supply one
-        title = request.title
+        title = body.title
         if not title:
-            first_line = request.text.strip().split("\n")[0].strip()
+            first_line = body.text.strip().split("\n")[0].strip()
             title = first_line[:80] if first_line else "Job Description"
 
         # Store JD
         jd = JobDescription(
             title=title,
-            company=request.company,
-            raw_text=request.text,
+            company=body.company,
+            raw_text=body.text,
             processed_text=parsed["processed_text"],
             parsed_requirements=parsed["sections"],
         )
@@ -655,6 +664,9 @@ def _run_analysis_background(
                     cache.set(jd_extract_key, jd_skills, "skill_extract")
         logger.info(f"[TIMING] Step 1 skill extraction: {int((time.time()-t0)*1000)}ms")
 
+        raw_resume_skills = resume_skills if _debug_trace_enabled() else []
+        raw_jd_skills = jd_skills if _debug_trace_enabled() else []
+
         # Step 2: Normalize skills
         normalization_payload = json.dumps(
             {
@@ -711,11 +723,16 @@ def _run_analysis_background(
         if not semantic_terms:
             semantic_terms = {s["name"] for s in jd_skills}
         jd_skill_names = sorted(semantic_terms)
+        skipped_retrieval = sorted(
+            {s["name"] for s in jd_skills} - set(jd_skill_names)
+        ) if _debug_trace_enabled() else []
+        rag_diagnostics = {} if _debug_trace_enabled() else None
         t2 = time.time()
         semantic_evidence = retriever.retrieve_for_analysis(
             resume_id=resume_id,
             jd_id=jd_id,
             query_skills=jd_skill_names,
+            diagnostics=rag_diagnostics,
         )
         logger.info(f"[TIMING] Step 3 RAG retrieval: {int((time.time()-t2)*1000)}ms")
 
@@ -745,11 +762,33 @@ def _run_analysis_background(
         if fallback_skill_names:
             fallback_evidence = retriever.retrieve_for_analysis(
                 resume_id=resume_id, jd_id=jd_id, query_skills=fallback_skill_names,
+                diagnostics=rag_diagnostics,
             )
             semantic_evidence.update(fallback_evidence)
+            jd_skill_names = sorted(set(jd_skill_names) | set(fallback_skill_names))
+            skipped_retrieval = sorted(
+                {s["name"] for s in jd_skills} - set(jd_skill_names)
+            ) if _debug_trace_enabled() else []
             score_result = engine.calculate_score(
                 resume_skills, jd_skills, semantic_evidence,
                 canonical_groups=canonical_groups, alternative_groups=alternative_groups,
+            )
+
+        if _debug_trace_enabled():
+            _emit_ats_debug_trace(
+                analysis_id=analysis_id,
+                resume_id=resume_id,
+                jd_id=jd_id,
+                raw_resume_skills=raw_resume_skills,
+                raw_jd_skills=raw_jd_skills,
+                normalized_resume_skills=resume_skills,
+                normalized_jd_skills=jd_skills,
+                canonical_groups=canonical_groups,
+                score_result=score_result,
+                semantic_evidence=semantic_evidence,
+                rag_diagnostics=rag_diagnostics,
+                rag_query_terms=jd_skill_names,
+                skipped_retrieval=skipped_retrieval,
             )
 
         # Step 5: Explainability
@@ -842,17 +881,19 @@ def _run_analysis_background(
 
 
 @router.post("/analysis/run", response_model=AnalysisResponse)
+@limiter.limit("10/minute")
 async def run_analysis(
-    request: AnalysisRunRequest,
+    request: Request,
+    body: AnalysisRunRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db_dependency),
     current_user: User = Depends(get_optional_user),
 ):
     """Submit an ATS analysis job. Returns immediately; poll GET /analysis/{id} for results."""
-    resume = db.query(Resume).filter(Resume.resume_id == request.resume_id).first()
+    resume = db.query(Resume).filter(Resume.resume_id == body.resume_id).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
-    jd = db.query(JobDescription).filter(JobDescription.jd_id == request.jd_id).first()
+    jd = db.query(JobDescription).filter(JobDescription.jd_id == body.jd_id).first()
     if not jd:
         raise HTTPException(status_code=404, detail="Job description not found")
 
@@ -860,8 +901,8 @@ async def run_analysis(
     user_id = (current_user.user_id if current_user else None) or resume.user_id
 
     analysis = ATSAnalysis(
-        resume_id=request.resume_id,
-        jd_id=request.jd_id,
+        resume_id=body.resume_id,
+        jd_id=body.jd_id,
         user_id=user_id,
         status=AnalysisStatus.PROCESSING,
     )
@@ -872,9 +913,9 @@ async def run_analysis(
     background_tasks.add_task(
         _run_analysis_background,
         str(analysis.analysis_id),
-        str(request.resume_id),
-        str(request.jd_id),
-        request.weights,
+        str(body.resume_id),
+        str(body.jd_id),
+        body.weights,
     )
 
     return AnalysisResponse(
@@ -884,272 +925,6 @@ async def run_analysis(
         status="processing",
     )
 
-
-# kept for backward compat - original blocking pipeline (now unused)
-async def _run_analysis_blocking(
-    request: AnalysisRunRequest,
-    db: Session,
-):
-    """Original blocking pipeline - preserved for reference."""
-    start_time = time.time()
-
-    try:
-        # Validate inputs exist
-        resume = db.query(Resume).filter(Resume.resume_id == request.resume_id).first()
-        if not resume:
-            raise HTTPException(status_code=404, detail="Resume not found")
-
-        jd = db.query(JobDescription).filter(JobDescription.jd_id == request.jd_id).first()
-        if not jd:
-            raise HTTPException(status_code=404, detail="Job description not found")
-
-        # Create analysis record
-        analysis = ATSAnalysis(
-            resume_id=request.resume_id,
-            jd_id=request.jd_id,
-            status=AnalysisStatus.PROCESSING,
-        )
-        db.add(analysis)
-        db.flush()
-
-        resume_text = resume.parsed_text or resume.raw_text
-        jd_text = jd.processed_text or jd.raw_text
-
-        # Step 1: Extract skills - run resume + JD extraction in parallel
-        t0 = time.time()
-        resume_extract_key = cache.generate_key(resume_text, prefix="resume_skill_extract")
-        jd_extract_key = cache.generate_key(jd_text, prefix="jd_skill_extract")
-
-        # Use skills already extracted at upload time (avoids a GPT call)
-        stored_skills = (resume.parsed_sections or {}).get("_skills")
-        if stored_skills:
-            resume_skills = [
-                {"name": s["skill"], "category": s.get("category", "technical"), "confidence": 1.0, "evidence": ""}
-                for s in stored_skills if s.get("skill")
-            ]
-            cache.set(resume_extract_key, resume_skills, "skill_extract")
-            logger.info(f"[TIMING] Step 1 resume skills loaded from stored data ({len(resume_skills)} skills)")
-        else:
-            resume_skills = cache.get(resume_extract_key, "skill_extract")
-
-        jd_skills = cache.get(jd_extract_key, "skill_extract")
-
-        if resume_skills is None or jd_skills is None:
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                futures = {}
-                if resume_skills is None:
-                    futures["resume"] = pool.submit(extractor.extract_skills, resume_text, "resume")
-                if jd_skills is None:
-                    futures["jd"] = pool.submit(extractor.extract_skills, jd_text, "job_description")
-                if "resume" in futures:
-                    resume_skills = futures["resume"].result()
-                    cache.set(resume_extract_key, resume_skills, "skill_extract")
-                if "jd" in futures:
-                    jd_skills = futures["jd"].result()
-                    cache.set(jd_extract_key, jd_skills, "skill_extract")
-
-        logger.info(f"[TIMING] Step 1 skill extraction: {int((time.time()-t0)*1000)}ms")
-
-        raw_resume_skills = resume_skills if _debug_trace_enabled() else []
-        raw_jd_skills = jd_skills if _debug_trace_enabled() else []
-
-        normalization_payload = json.dumps(
-            {
-                "resume_skills": resume_skills,
-                "jd_skills": jd_skills,
-                "resume_text": resume_text[:4000],
-                "jd_text": jd_text[:4000],
-                "version": "semantic-normalization-v6",
-            },
-            sort_keys=True,
-            default=str,
-        )
-        normalization_key = cache.generate_key(
-            normalization_payload,
-            prefix="skill_semantic_normalization",
-        )
-        normalized = cache.get(normalization_key, "skill_semantic_normalization")
-        if normalized is None:
-            t1 = time.time()
-            normalized = normalizer.normalize_skill_sets(
-                resume_skills=resume_skills,
-                jd_skills=jd_skills,
-                resume_text=resume_text,
-                jd_text=jd_text,
-            )
-            logger.info(f"[TIMING] Step 2 normalization: {int((time.time()-t1)*1000)}ms")
-            cache.set(normalization_key, normalized, "skill_semantic_normalization")
-
-        resume_skills = normalized["resume_skills"]
-        jd_skills = normalized["jd_skills"]
-        canonical_groups = normalized.get("canonical_skill_groups", [])
-        alternative_groups = normalized.get("alternative_groups", [])
-
-        # Step 2: Targeted RAG retrieval
-        retriever = SemanticRetriever(db)
-        semantic_terms = {
-            term
-            for group in canonical_groups
-            for term in group.get("original_jd_terms", [])
-            if group.get("confidence", 0.0) >= 0.8
-        }
-        if not semantic_terms:
-            semantic_terms = {s["name"] for s in jd_skills}
-        jd_skill_names = sorted(semantic_terms)
-        skipped_retrieval = sorted(
-            {s["name"] for s in jd_skills} - set(jd_skill_names)
-        ) if _debug_trace_enabled() else []
-        rag_diagnostics = {} if _debug_trace_enabled() else None
-        t2 = time.time()
-        semantic_evidence = retriever.retrieve_for_analysis(
-            resume_id=request.resume_id,
-            jd_id=request.jd_id,
-            query_skills=jd_skill_names,
-            diagnostics=rag_diagnostics,
-        )
-        logger.info(f"[TIMING] Step 3 RAG retrieval: {int((time.time()-t2)*1000)}ms")
-
-        # Step 3: Hybrid matching
-        if request.weights:
-            engine = HybridMatchingEngine(
-                keyword_weight=request.weights.get("keyword", 0.4),
-                semantic_weight=request.weights.get("semantic", 0.4),
-                category_weight=request.weights.get("category", 0.2),
-            )
-        else:
-            engine = matcher
-
-        score_result = engine.calculate_score(
-            resume_skills,
-            jd_skills,
-            semantic_evidence,
-            canonical_groups=canonical_groups,
-            alternative_groups=alternative_groups,
-        )
-
-        matched_keys = _matched_skill_keys(score_result)
-        queried_keys = {deterministic_normalize(skill) for skill in jd_skill_names}
-        fallback_skill_names = sorted(
-            {
-                skill["name"]
-                for skill in jd_skills
-                if deterministic_normalize(skill["name"]) not in matched_keys
-                and deterministic_normalize(skill["name"]) not in queried_keys
-            }
-        )
-        if fallback_skill_names:
-            fallback_evidence = retriever.retrieve_for_analysis(
-                resume_id=request.resume_id,
-                jd_id=request.jd_id,
-                query_skills=fallback_skill_names,
-                diagnostics=rag_diagnostics,
-            )
-            semantic_evidence.update(fallback_evidence)
-            jd_skill_names = sorted(set(jd_skill_names) | set(fallback_skill_names))
-            skipped_retrieval = sorted(
-                {s["name"] for s in jd_skills} - set(jd_skill_names)
-            ) if _debug_trace_enabled() else []
-            score_result = engine.calculate_score(
-                resume_skills,
-                jd_skills,
-                semantic_evidence,
-                canonical_groups=canonical_groups,
-                alternative_groups=alternative_groups,
-            )
-
-        if _debug_trace_enabled():
-            _emit_ats_debug_trace(
-                analysis_id=analysis.analysis_id,
-                resume_id=request.resume_id,
-                jd_id=request.jd_id,
-                raw_resume_skills=raw_resume_skills,
-                raw_jd_skills=raw_jd_skills,
-                normalized_resume_skills=resume_skills,
-                normalized_jd_skills=jd_skills,
-                canonical_groups=canonical_groups,
-                score_result=score_result,
-                semantic_evidence=semantic_evidence,
-                rag_diagnostics=rag_diagnostics,
-                rag_query_terms=jd_skill_names,
-                skipped_retrieval=skipped_retrieval,
-            )
-
-        # Step 4: Explainability
-        t3 = time.time()
-        explanation = explainer.generate_explanation(
-            score_result,
-            semantic_evidence,
-            resume_text,
-)
-
-        logger.info(f"[TIMING] Step 4 explainability: {int((time.time()-t3)*1000)}ms")
-        # Step 5: Bullet optimization is intentionally skipped during ATS scoring.
-        optimized_bullets = []
-
-        # Calculate processing time
-        processing_time = int((time.time() - start_time) * 1000)
-
-        # Update analysis record
-        analysis.status = AnalysisStatus.COMPLETED
-        analysis.overall_score = score_result["overall_score"]
-        analysis.keyword_score = score_result["keyword_score"]
-        analysis.semantic_score = score_result["semantic_score"]
-        analysis.category_scores = score_result["category_scores"]
-        analysis.matched_skills = score_result["matched_skills"]
-        analysis.missing_skills = score_result["missing_skills"]
-        analysis.recommendations = explanation.get("improvement_priority", [])
-        analysis.evidence = explanation.get("evidence", [])
-        analysis.explainability_report = explanation
-        analysis.optimized_bullets = optimized_bullets
-        analysis.processing_time_ms = processing_time
-        db.commit()
-
-        return AnalysisResponse(
-            success=True,
-            message="Analysis completed successfully",
-            analysis_id=analysis.analysis_id,
-            status="completed",
-            score=ScoreBreakdown(
-                overall_score=score_result["overall_score"],
-                keyword_score=score_result["keyword_score"],
-                semantic_score=score_result["semantic_score"],
-                category_scores=score_result["category_scores"],
-            ),
-            matched_skills=[
-                SkillDetail(
-                    skill=m["skill"],
-                    category=m.get("category", "unknown"),
-                    match_type=m.get("match_type"),
-                    matched_by=m.get("matched_by"),
-                    match_reason=m.get("match_reason"),
-                    evidence=m.get("evidence_from_resume"),
-                    evidence_from_resume=m.get("evidence_from_resume"),
-                    confidence=m.get("confidence"),
-                )
-                for m in score_result["matched_skills"]
-            ],
-            missing_skills=[
-                SkillDetail(
-                    skill=m["skill"],
-                    category=m.get("category", "unknown"),
-                    missing_reason=m.get("missing_reason"),
-                )
-                for m in score_result["missing_skills"]
-            ],
-            recommendations=explanation.get("improvement_priority", []),
-            explainability=explanation,
-            evidence=explanation.get("evidence", []),
-            processing_time_ms=processing_time,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Analysis failed: {e}")
-        if 'analysis' in locals():
-            analysis.status = AnalysisStatus.FAILED
-            db.commit()
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
 @router.get("/analysis/{analysis_id}", response_model=AnalysisResponse)

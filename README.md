@@ -50,7 +50,7 @@ An AI-powered platform that analyzes how well a resume matches a job description
 | CI | GitHub Actions |
 | Testing | pytest |
 
-Note: `src/ui/app.py` (Streamlit) exists in the repo from an earlier prototype but is not part of the active application — the Next.js frontend is the real UI.
+Note: `src/ui/app.py` (Streamlit) exists in the repo from an earlier prototype but is not part of the active application - the Next.js frontend is the real UI.
 
 ## Key Features
 
@@ -206,15 +206,15 @@ pytest --cov=src --cov-report=html
 ## Database Schema
 
 PostgreSQL schema, key tables:
-- `users` — user accounts (linked to Clerk identity)
-- `resumes` — uploaded resumes, parsed sections, extracted skills, active flag
-- `job_descriptions` — parsed job requirements
-- `ats_analyses` — analysis results, scores, evidence, optimized bullets
-- `document_chunks` — RAG chunks with pgvector embeddings
-- `quiz_results` — generated quizzes and grading
-- `skill_progress` — per-user, per-skill quiz progress and resolution state
-- `user_feedback` — feedback/suggestion submissions
-- `cache_entries` — cache hit/miss metrics
+- `users` - user accounts (linked to Clerk identity)
+- `resumes` - uploaded resumes, parsed sections, extracted skills, active flag
+- `job_descriptions` - parsed job requirements
+- `ats_analyses` - analysis results, scores, evidence, optimized bullets
+- `document_chunks` - RAG chunks with pgvector embeddings
+- `quiz_results` - generated quizzes and grading
+- `skill_progress` - per-user, per-skill quiz progress and resolution state
+- `user_feedback` - feedback/suggestion submissions
+- `cache_entries` - cache hit/miss metrics
 
 ## Scoring Methodology
 
@@ -226,9 +226,8 @@ Category weights: Core 2.0x, Technical 1.5x, Functional 1.2x, Behavioral 0.8x, S
 
 ## Known Limitations
 
-- LLM-generated quiz answer keys are not always correct; the prompt asks the model to self-verify but this is a mitigation, not a guarantee.
-- A handful of unit/integration tests currently fail after recent matching-engine and parser changes and need updating to match the new expected behavior.
-- No rate limiting on OpenAI-backed endpoints yet — public deployment should add this before high-traffic use.
+- LLM-generated quiz answer keys are not always correct. The prompt asks the model to independently derive and self-verify each answer before finalizing it, and generation runs at low temperature (0.2) to reduce inconsistency, but this is a mitigation, not a guarantee.
+- Rate limiting is in place (10-15 requests/minute per IP on OpenAI-backed endpoints, 5/minute on feedback) to bound API cost on a public deployment, but it is a basic in-memory limiter keyed by IP address, not a production-grade distributed rate limiter (e.g. no shared state across multiple backend instances).
 
 ## License
 

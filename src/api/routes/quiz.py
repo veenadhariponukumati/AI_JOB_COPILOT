@@ -3,7 +3,7 @@
 import json
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from openai import OpenAI
 
@@ -15,6 +15,7 @@ from src.api.schemas.responses import (
 )
 from src.core.config import get_settings
 from src.core.logger import get_logger
+from src.core.rate_limit import limiter
 from src.database.models import ATSAnalysis, QuizResult, SkillProgress
 from src.database.session import get_db_dependency
 
@@ -73,8 +74,10 @@ Return JSON:
 
 
 @router.post("/quiz/start", response_model=QuizStartResponse)
+@limiter.limit("15/minute")
 async def start_quiz(
-    request: QuizStartRequest,
+    request: Request,
+    body: QuizStartRequest,
     db: Session = Depends(get_db_dependency),
 ):
     """Start a skill validation quiz.
@@ -84,7 +87,7 @@ async def start_quiz(
     try:
         # Validate analysis exists
         analysis = db.query(ATSAnalysis).filter(
-            ATSAnalysis.analysis_id == request.analysis_id
+            ATSAnalysis.analysis_id == body.analysis_id
         ).first()
         if not analysis:
             raise HTTPException(status_code=404, detail="Analysis not found")
@@ -96,15 +99,15 @@ async def start_quiz(
         )
 
         skill_context = SKILL_DISAMBIGUATION.get(
-            request.skill.strip().lower(), request.skill
+            body.skill.strip().lower(), body.skill
         )
         prompt = QUIZ_GENERATION_PROMPT.format(
-            num_questions=request.num_questions,
+            num_questions=body.num_questions,
             skill_context=skill_context,
-            difficulty=request.difficulty,
+            difficulty=body.difficulty,
         )
 
-        response = client.chat.completions.create(
+        completion = client.chat.completions.create(
             model=settings.OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "You are a technical quiz generator. Return only valid JSON."},
@@ -114,15 +117,15 @@ async def start_quiz(
             response_format={"type": "json_object"},
         )
 
-        result = json.loads(response.choices[0].message.content)
+        result = json.loads(completion.choices[0].message.content)
         questions_data = result.get("questions", [])
 
         # Create quiz record
         quiz = QuizResult(
-            analysis_id=request.analysis_id,
+            analysis_id=body.analysis_id,
             user_id=analysis.user_id,
-            skill_tested=request.skill,
-            difficulty=request.difficulty,
+            skill_tested=body.skill,
+            difficulty=body.difficulty,
             questions=questions_data,
         )
         db.add(quiz)
@@ -134,7 +137,7 @@ async def start_quiz(
                 question_id=i + 1,
                 question=q["question"],
                 options=q["options"],
-                difficulty=request.difficulty,
+                difficulty=body.difficulty,
             )
             for i, q in enumerate(questions_data)
         ]
@@ -143,7 +146,7 @@ async def start_quiz(
             success=True,
             message="Quiz generated successfully",
             quiz_id=quiz.quiz_id,
-            skill=request.skill,
+            skill=body.skill,
             questions=questions,
             total_questions=len(questions),
         )
