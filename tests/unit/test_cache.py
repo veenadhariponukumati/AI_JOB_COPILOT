@@ -1,7 +1,9 @@
 """Unit tests for the caching module."""
 
-import pytest
 import time
+
+import pytest
+
 from src.cache.cache_manager import CacheManager
 
 

@@ -1,6 +1,7 @@
 """Unit tests for the hybrid matching engine."""
 
 import pytest
+
 from src.matching.engine import HybridMatchingEngine
 
 
@@ -163,7 +164,9 @@ class TestHybridMatchingEngine:
                 "evidence": "Spec-Driven Development workflows",
             }
         ]
-        jd_skills = [{"name": "Writing Specifications", "normalized_name": "writingspecifications", "category": "functional"}]
+        jd_skills = [
+            {"name": "Writing Specifications", "normalized_name": "writingspecifications", "category": "functional"}
+        ]
         canonical_groups = [
             {
                 "canonical_skill": "Specification Writing",
@@ -255,7 +258,12 @@ class TestHybridMatchingEngine:
 
     def test_system_design_and_production_operations_exact(self, engine):
         resume_skills = [
-            {"name": "System Design", "normalized_name": "systemdesign", "category": "technical", "evidence": "System Design"},
+            {
+                "name": "System Design",
+                "normalized_name": "systemdesign",
+                "category": "technical",
+                "evidence": "System Design",
+            },
             {
                 "name": "Production Operations",
                 "normalized_name": "productionoperations",

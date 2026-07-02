@@ -4,12 +4,10 @@ Handles PDF extraction, text cleaning, and section identification.
 """
 
 import re
-import tempfile
-from typing import Dict, List, Optional
-from pathlib import Path
+from typing import Dict, List
 
-from src.core.logger import get_logger
 from src.core.exceptions import ParsingError
+from src.core.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -65,17 +63,12 @@ RESUME_SECTION_PATTERNS = {
         r"recognition|distinctions?|awards?\s*&\s*honors?|"
         r"scholarships?)\s*:?\s*$"
     ),
-    "publications": (
-        r"(?i)^(publications?|research|papers?|articles?|"
-        r"conference\s*papers?|journals?)\s*:?\s*$"
-    ),
+    "publications": (r"(?i)^(publications?|research|papers?|articles?|" r"conference\s*papers?|journals?)\s*:?\s*$"),
     "volunteer": (
         r"(?i)^(volunteer(ing)?(\s*experience)?|community(\s*service)?|"
         r"extracurricular(s)?|activities|leadership(\s*experience)?)\s*:?\s*$"
     ),
-    "languages": (
-        r"(?i)^(languages?|spoken\s*languages?|language\s*proficiencies?)\s*:?\s*$"
-    ),
+    "languages": (r"(?i)^(languages?|spoken\s*languages?|language\s*proficiencies?)\s*:?\s*$"),
 }
 
 JD_SECTION_PATTERNS = {
@@ -101,8 +94,9 @@ class DocumentParser:
             Dictionary with 'raw_text' and 'sections'.
         """
         try:
-            import PyPDF2
             import io
+
+            import PyPDF2
 
             reader = PyPDF2.PdfReader(io.BytesIO(file_content))
             pages_text = []
@@ -180,9 +174,7 @@ class DocumentParser:
         text = re.sub(r"[ \t]+", " ", text)
         return text.strip()
 
-    def _extract_sections(
-        self, text: str, patterns: Dict[str, str]
-    ) -> Dict[str, str]:
+    def _extract_sections(self, text: str, patterns: Dict[str, str]) -> Dict[str, str]:
         """Extract sections from text using regex patterns.
 
         Returns a dictionary mapping section names to their content.
@@ -270,19 +262,23 @@ class DocumentParser:
                     # and lowercase-starting lines (these are PDF-wrapped continuations
                     # of the previous bullet, not new headings)
                     is_tech_stack = bool(re.match(r"(?i)^tech\s*(stack|skills?)\s*:", stripped))
-                    is_date_line = bool(re.search(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{4}", stripped, re.IGNORECASE))
+                    is_date_line = bool(
+                        re.search(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{4}", stripped, re.IGNORECASE)
+                    )
                     is_continuation = bool(re.match(r"^[a-z]", stripped))
                     ends_like_sentence = stripped.endswith(".")
                     heading_candidate = re.sub(r"https?://\S+", "", stripped).strip()
-                    if (len(heading_candidate) < 100
-                            and heading_candidate
-                            and not is_tech_stack
-                            and not is_date_line
-                            and not is_continuation
-                            and not ends_like_sentence
-                            and not self._ACTION_VERBS.match(stripped)
-                            and not re.match(r"^[\-\*•●○‣–\d]", stripped)
-                            and re.search(r"[A-Z]", heading_candidate)):
+                    if (
+                        len(heading_candidate) < 100
+                        and heading_candidate
+                        and not is_tech_stack
+                        and not is_date_line
+                        and not is_continuation
+                        and not ends_like_sentence
+                        and not self._ACTION_VERBS.match(stripped)
+                        and not re.match(r"^[\-\*•●○‣–\d]", stripped)
+                        and re.search(r"[A-Z]", heading_candidate)
+                    ):
                         candidate = heading_candidate.split("|")[0].split("·")[0].split(",")[0].strip()
                         if len(candidate) > 80:
                             continue  # too long to be a heading, leave current_sub as-is

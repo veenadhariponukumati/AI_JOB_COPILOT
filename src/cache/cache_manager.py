@@ -10,11 +10,10 @@ Tracks cache hits, misses, and latency reduction.
 """
 
 import hashlib
-import time
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Tuple
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
 
 from src.core.config import get_settings
 from src.core.logger import get_logger
@@ -176,9 +175,7 @@ class CacheManager:
     def clear(self, cache_type: Optional[str] = None):
         """Clear cache entries, optionally filtered by type."""
         if cache_type:
-            keys_to_remove = [
-                k for k, v in self._cache.items() if v.cache_type == cache_type
-            ]
+            keys_to_remove = [k for k, v in self._cache.items() if v.cache_type == cache_type]
             for key in keys_to_remove:
                 del self._cache[key]
         else:

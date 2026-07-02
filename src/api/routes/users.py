@@ -4,15 +4,15 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from src.api.auth import get_current_user, get_optional_user, fetch_clerk_profile
+from src.api.auth import fetch_clerk_profile, get_current_user, get_optional_user
 from src.core.config import get_settings
 from src.core.email import send_email
 from src.core.rate_limit import limiter
+from src.database.models import ATSAnalysis, Resume, SkillProgress, User, UserFeedback
 from src.database.session import get_db_dependency as get_db
-from src.database.models import User, Resume, ATSAnalysis, SkillProgress, UserFeedback
 from src.nlp.extractor import SkillExtractor
 
 settings = get_settings()
@@ -22,6 +22,7 @@ feedback_router = APIRouter(tags=["feedback"])
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
+
 
 class UserProfileResponse(BaseModel):
     user_id: UUID
@@ -63,6 +64,7 @@ class SkillProgressResponse(BaseModel):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+
 @router.get("/me", response_model=UserProfileResponse)
 def get_profile(current_user: User = Depends(get_current_user)):
     return current_user
@@ -74,10 +76,7 @@ def list_resumes(
     db: Session = Depends(get_db),
 ):
     resumes = (
-        db.query(Resume)
-        .filter(Resume.user_id == current_user.user_id)
-        .order_by(Resume.upload_timestamp.desc())
-        .all()
+        db.query(Resume).filter(Resume.user_id == current_user.user_id).order_by(Resume.upload_timestamp.desc()).all()
     )
     return [
         ResumeResponse(
@@ -97,10 +96,14 @@ def delete_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = db.query(Resume).filter(
-        Resume.resume_id == resume_id,
-        Resume.user_id == current_user.user_id,
-    ).first()
+    resume = (
+        db.query(Resume)
+        .filter(
+            Resume.resume_id == resume_id,
+            Resume.user_id == current_user.user_id,
+        )
+        .first()
+    )
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found.")
     was_active = resume.is_active
@@ -125,10 +128,14 @@ def set_active_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = db.query(Resume).filter(
-        Resume.resume_id == resume_id,
-        Resume.user_id == current_user.user_id,
-    ).first()
+    resume = (
+        db.query(Resume)
+        .filter(
+            Resume.resume_id == resume_id,
+            Resume.user_id == current_user.user_id,
+        )
+        .first()
+    )
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found.")
     db.query(Resume).filter(Resume.user_id == current_user.user_id).update({"is_active": False})
@@ -151,10 +158,14 @@ def rename_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = db.query(Resume).filter(
-        Resume.resume_id == resume_id,
-        Resume.user_id == current_user.user_id,
-    ).first()
+    resume = (
+        db.query(Resume)
+        .filter(
+            Resume.resume_id == resume_id,
+            Resume.user_id == current_user.user_id,
+        )
+        .first()
+    )
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found.")
     new_name = request.filename.strip()
@@ -228,14 +239,9 @@ def get_resume_skills(
 ):
     """Extract skills from the user's active resume."""
     resume = (
-        db.query(Resume)
-        .filter(Resume.user_id == current_user.user_id, Resume.is_active == True)  # noqa: E712
-        .first()
+        db.query(Resume).filter(Resume.user_id == current_user.user_id, Resume.is_active == True).first()  # noqa: E712
     ) or (
-        db.query(Resume)
-        .filter(Resume.user_id == current_user.user_id)
-        .order_by(Resume.upload_timestamp.desc())
-        .first()
+        db.query(Resume).filter(Resume.user_id == current_user.user_id).order_by(Resume.upload_timestamp.desc()).first()
     )
     if not resume:
         return {"skills": [], "resume_filename": None, "error": None, "pending": False}
@@ -250,6 +256,7 @@ def get_resume_skills(
     # with a duplicate live extraction here - just tell the frontend to
     # keep polling instead of erroring.
     from datetime import datetime, timedelta
+
     if resume.upload_timestamp and datetime.utcnow() - resume.upload_timestamp < timedelta(seconds=100):
         return {"skills": [], "resume_filename": resume.filename, "error": None, "pending": True}
 
@@ -259,12 +266,15 @@ def get_resume_skills(
     if not resume.raw_text:
         return {"skills": [], "resume_filename": resume.filename, "error": None, "pending": False}
     import time as _time
+
     last_error = None
     for attempt in range(3):
         try:
             extractor = SkillExtractor()
             raw = extractor.extract_skills(resume.raw_text)
-            skills = [{"skill": s.get("name", ""), "category": s.get("category", "technical")} for s in raw if s.get("name")]
+            skills = [
+                {"skill": s.get("name", ""), "category": s.get("category", "technical")} for s in raw if s.get("name")
+            ]
             try:
                 sections = dict(resume.parsed_sections or {})
                 sections["_skills"] = skills
@@ -309,6 +319,7 @@ def get_analysis_history(
 
 
 # ── Feedback ──────────────────────────────────────────────────────────────────
+
 
 class UserFeedbackRequest(BaseModel):
     category: str = Field("general", description="bug, suggestion, or general")

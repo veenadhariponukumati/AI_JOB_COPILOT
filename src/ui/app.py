@@ -2,11 +2,13 @@
 
 Professional multi-page interface for the AI Resume Intelligence Platform.
 """
+
 import io
-import PyPDF2
-import streamlit as st
-import requests
 from datetime import datetime
+
+import PyPDF2
+import requests
+import streamlit as st
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -134,9 +136,7 @@ if st.session_state.page == "Dashboard":
     if history and history.get("items"):
         st.markdown("### Recent Analyses")
         for item in history["items"]:
-            with st.expander(
-                f"{item.get('jd_title', 'Untitled')} - Score: {item.get('overall_score', 'N/A')}%"
-            ):
+            with st.expander(f"{item.get('jd_title', 'Untitled')} - Score: {item.get('overall_score', 'N/A')}%"):
                 st.write(f"**Status:** {item['status']}")
                 st.write(f"**Date:** {item['created_at']}")
                 st.write(f"**Resume:** {item.get('resume_filename', 'N/A')}")
@@ -280,8 +280,7 @@ elif st.session_state.page == "ATS Analysis":
         st.warning("Please upload both a resume and job description first.")
     else:
         st.info(
-            f"Resume: `{st.session_state.current_resume_id}`\n\n"
-            f"Job Description: `{st.session_state.current_jd_id}`"
+            f"Resume: `{st.session_state.current_resume_id}`\n\n" f"Job Description: `{st.session_state.current_jd_id}`"
         )
 
         # Custom weights
@@ -289,14 +288,32 @@ elif st.session_state.page == "ATS Analysis":
             st.caption("Defaults are tuned for ATS matching. Adjust only if you want to prioritize differently.")
             col_w1, col_w2, col_w3 = st.columns(3)
             with col_w1:
-                kw = st.slider("Keyword Weight", 0.0, 1.0, 0.5, 0.05,
-                    help="Exact and near-exact skill matches. Most ATS systems weight this highest.")
+                kw = st.slider(
+                    "Keyword Weight",
+                    0.0,
+                    1.0,
+                    0.5,
+                    0.05,
+                    help="Exact and near-exact skill matches. Most ATS systems weight this highest.",
+                )
             with col_w2:
-                sw = st.slider("Semantic Weight", 0.0, 1.0, 0.3, 0.05,
-                    help="Contextual similarity - catches synonyms and related experience.")
+                sw = st.slider(
+                    "Semantic Weight",
+                    0.0,
+                    1.0,
+                    0.3,
+                    0.05,
+                    help="Contextual similarity - catches synonyms and related experience.",
+                )
             with col_w3:
-                cw = st.slider("Category Weight", 0.0, 1.0, 0.2, 0.05,
-                    help="How well your skill categories (technical, functional, etc.) align with the JD.")
+                cw = st.slider(
+                    "Category Weight",
+                    0.0,
+                    1.0,
+                    0.2,
+                    0.05,
+                    help="How well your skill categories (technical, functional, etc.) align with the JD.",
+                )
             total_w = kw + sw + cw
             if abs(total_w - 1.0) > 0.01:
                 st.warning(f"Weights should sum to 1.0 (current: {total_w:.2f}). Consider adjusting.")
@@ -316,6 +333,7 @@ elif st.session_state.page == "ATS Analysis":
         # Polling loop - runs on each rerun until analysis is complete
         if st.session_state.get("analysis_polling") and st.session_state.current_analysis_id:
             import time as _time
+
             steps = ["Extracting skills...", "Normalizing skills...", "Retrieving evidence...", "Generating report..."]
             status_box = st.empty()
             progress_bar = st.progress(0)
@@ -407,8 +425,8 @@ elif st.session_state.page == "Skills Gap":
         with col2:
             st.markdown("### Missing Skills")
             for skill in result.get("missing_skills", []):
-                skill_name = skill['skill']
-                category = skill.get('category', 'unknown')
+                skill_name = skill["skill"]
+                category = skill.get("category", "unknown")
                 suggestion = AI_TOOL_SUGGESTIONS.get(skill_name.lower())
                 st.write(f"❌ **{skill_name}** ({category})")
                 if suggestion:
@@ -525,6 +543,5 @@ elif st.session_state.page == "Skill Validation":
                         st.metric("Score", f"{result.get('score', 0):.0f}%")
                         st.write(f"**Status:** {result.get('passed', 'unknown')}")
                         st.write(
-                            f"**Correct:** {result.get('correct_answers', 0)}"
-                            f"/{result.get('total_questions', 0)}"
+                            f"**Correct:** {result.get('correct_answers', 0)}" f"/{result.get('total_questions', 0)}"
                         )

@@ -3,17 +3,19 @@
 Production-style REST API for the AI Job Copilot platform.
 """
 
+import time
 import traceback
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-import time
 
 from src.api.routes.analysis import router as analysis_router
 from src.api.routes.quiz import router as quiz_router
-from src.api.routes.users import router as users_router, feedback_router
+from src.api.routes.users import feedback_router
+from src.api.routes.users import router as users_router
 from src.cache.cache_manager import get_cache
 from src.core.config import get_settings
 from src.core.exceptions import AppException
@@ -28,8 +30,7 @@ logger = get_logger(__name__)
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="AI-powered ATS Resume Optimization Platform with RAG, "
-    "hybrid matching, and explainable scoring.",
+    description="AI-powered ATS Resume Optimization Platform with RAG, " "hybrid matching, and explainable scoring.",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -127,6 +128,7 @@ async def cache_metrics():
 
 try:
     from mangum import Mangum
+
     handler = Mangum(app)
 except ImportError:
     # Mangum not installed; running locally

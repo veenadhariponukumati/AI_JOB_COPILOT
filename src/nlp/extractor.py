@@ -6,13 +6,13 @@ to prevent generic words from being classified as skills.
 
 import json
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 from openai import OpenAI
 
 from src.core.config import get_settings
-from src.core.logger import get_logger
 from src.core.exceptions import ExtractionError
+from src.core.logger import get_logger
 from src.nlp.skill_normalizer import deterministic_normalize
 
 logger = get_logger(__name__)
@@ -22,17 +22,77 @@ settings = get_settings()
 
 # Words that should NEVER be classified as skills
 GENERIC_WORD_BLOCKLIST = {
-    "team", "work", "good", "great", "excellent", "strong", "ability",
-    "responsible", "responsible for", "experience", "knowledge", "understanding",
-    "familiar", "proficient", "skilled", "capable", "competent", "detail",
-    "detail-oriented", "self-motivated", "motivated", "passionate", "dedicated",
-    "hard-working", "fast learner", "quick learner", "results-driven",
-    "dynamic", "innovative", "creative", "proactive", "flexible",
-    "adaptable", "reliable", "dependable", "organized", "analytical",
-    "the", "and", "for", "with", "that", "this", "from", "have", "been",
-    "will", "can", "are", "was", "were", "has", "had", "not", "but",
-    "all", "any", "each", "every", "both", "few", "more", "most",
-    "other", "some", "such", "than", "too", "very", "just", "also",
+    "team",
+    "work",
+    "good",
+    "great",
+    "excellent",
+    "strong",
+    "ability",
+    "responsible",
+    "responsible for",
+    "experience",
+    "knowledge",
+    "understanding",
+    "familiar",
+    "proficient",
+    "skilled",
+    "capable",
+    "competent",
+    "detail",
+    "detail-oriented",
+    "self-motivated",
+    "motivated",
+    "passionate",
+    "dedicated",
+    "hard-working",
+    "fast learner",
+    "quick learner",
+    "results-driven",
+    "dynamic",
+    "innovative",
+    "creative",
+    "proactive",
+    "flexible",
+    "adaptable",
+    "reliable",
+    "dependable",
+    "organized",
+    "analytical",
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "from",
+    "have",
+    "been",
+    "will",
+    "can",
+    "are",
+    "was",
+    "were",
+    "has",
+    "had",
+    "not",
+    "but",
+    "all",
+    "any",
+    "each",
+    "every",
+    "both",
+    "few",
+    "more",
+    "most",
+    "other",
+    "some",
+    "such",
+    "than",
+    "too",
+    "very",
+    "just",
+    "also",
 }
 
 # Minimum length for a skill name
@@ -106,9 +166,7 @@ class SkillExtractor:
         )
         self.model = settings.OPENAI_MODEL
 
-    def extract_skills(
-        self, text: str, document_type: str = "resume"
-    ) -> List[Dict]:
+    def extract_skills(self, text: str, document_type: str = "resume") -> List[Dict]:
         """Extract skills from text using LLM with validation.
 
         Args:
@@ -162,9 +220,7 @@ class SkillExtractor:
             logger.error(f"Skill extraction failed: {e}")
             raise ExtractionError(f"Skill extraction failed: {str(e)}")
 
-    def classify_skills_for_role(
-        self, skills: List[str], jd_text: str
-    ) -> List[Dict]:
+    def classify_skills_for_role(self, skills: List[str], jd_text: str) -> List[Dict]:
         """Classify extracted skills as core or supporting for a specific role.
 
         Args:

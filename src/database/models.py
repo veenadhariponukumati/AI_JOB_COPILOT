@@ -1,23 +1,27 @@
 """SQLAlchemy ORM models for the AI Job Copilot database."""
 
+import enum
 import uuid
 from datetime import datetime
+
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
+    Boolean,
     Column,
+    DateTime,
+)
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import (
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
     String,
     Text,
-    Float,
-    Integer,
-    Boolean,
-    DateTime,
-    ForeignKey,
-    JSON,
-    Index,
-    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
-from pgvector.sqlalchemy import Vector
 
 from src.core.config import get_settings
 
@@ -26,8 +30,6 @@ Base = declarative_base()
 
 
 # ─── Enums ───────────────────────────────────────────────────────────────────
-
-import enum
 
 
 class SkillCategory(str, enum.Enum):
@@ -56,9 +58,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=True)
     full_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     resumes = relationship("Resume", back_populates="user", cascade="all, delete-orphan")
@@ -75,18 +75,14 @@ class Resume(Base):
     __tablename__ = "resumes"
 
     resume_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     filename = Column(String(255), nullable=True)
     raw_text = Column(Text, nullable=False)
     parsed_text = Column(Text, nullable=True)
     parsed_sections = Column(JSON, nullable=True)
     is_active = Column(Boolean, default=False, nullable=False)
     upload_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="resumes")
@@ -103,26 +99,18 @@ class JobDescription(Base):
     __tablename__ = "job_descriptions"
 
     jd_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True)
     title = Column(String(255), nullable=True)
     company = Column(String(255), nullable=True)
     raw_text = Column(Text, nullable=False)
     processed_text = Column(Text, nullable=True)
     parsed_requirements = Column(JSON, nullable=True)
     upload_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
-    analyses = relationship(
-        "ATSAnalysis", back_populates="job_description", cascade="all, delete-orphan"
-    )
-    chunks = relationship(
-        "DocumentChunk", back_populates="job_description", cascade="all, delete-orphan"
-    )
+    analyses = relationship("ATSAnalysis", back_populates="job_description", cascade="all, delete-orphan")
+    chunks = relationship("DocumentChunk", back_populates="job_description", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_jd_upload_ts", "upload_timestamp"),
@@ -136,9 +124,7 @@ class Skill(Base):
     skill_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     skill_name = Column(String(255), nullable=False, unique=True)
     skill_name_normalized = Column(String(255), nullable=False)
-    skill_category = Column(
-        SQLEnum(SkillCategory), nullable=False, default=SkillCategory.TECHNICAL
-    )
+    skill_category = Column(SQLEnum(SkillCategory), nullable=False, default=SkillCategory.TECHNICAL)
     description = Column(Text, nullable=True)
     synonyms = Column(JSON, nullable=True)  # List of alternative names
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -157,20 +143,14 @@ class ATSAnalysis(Base):
     __tablename__ = "ats_analyses"
 
     analysis_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True
-    )
-    resume_id = Column(
-        UUID(as_uuid=True), ForeignKey("resumes.resume_id", ondelete="CASCADE"), nullable=False
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True)
+    resume_id = Column(UUID(as_uuid=True), ForeignKey("resumes.resume_id", ondelete="CASCADE"), nullable=False)
     jd_id = Column(
         UUID(as_uuid=True),
         ForeignKey("job_descriptions.jd_id", ondelete="CASCADE"),
         nullable=False,
     )
-    status = Column(
-        SQLEnum(AnalysisStatus), nullable=False, default=AnalysisStatus.PENDING
-    )
+    status = Column(SQLEnum(AnalysisStatus), nullable=False, default=AnalysisStatus.PENDING)
     overall_score = Column(Float, nullable=True)
     keyword_score = Column(Float, nullable=True)
     semantic_score = Column(Float, nullable=True)
@@ -183,9 +163,7 @@ class ATSAnalysis(Base):
     optimized_bullets = Column(JSON, nullable=True)
     processing_time_ms = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="analyses")
@@ -215,9 +193,7 @@ class AnalysisSkill(Base):
         ForeignKey("ats_analyses.analysis_id", ondelete="CASCADE"),
         nullable=False,
     )
-    skill_id = Column(
-        UUID(as_uuid=True), ForeignKey("skills.skill_id", ondelete="CASCADE"), nullable=False
-    )
+    skill_id = Column(UUID(as_uuid=True), ForeignKey("skills.skill_id", ondelete="CASCADE"), nullable=False)
     source = Column(String(50), nullable=False)  # 'resume' or 'job_description'
     confidence = Column(Float, nullable=False, default=0.0)
     matched = Column(String(20), nullable=True)  # 'exact', 'semantic', 'missing'
@@ -239,9 +215,7 @@ class DocumentChunk(Base):
     __tablename__ = "document_chunks"
 
     chunk_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    resume_id = Column(
-        UUID(as_uuid=True), ForeignKey("resumes.resume_id", ondelete="CASCADE"), nullable=True
-    )
+    resume_id = Column(UUID(as_uuid=True), ForeignKey("resumes.resume_id", ondelete="CASCADE"), nullable=True)
     jd_id = Column(
         UUID(as_uuid=True),
         ForeignKey("job_descriptions.jd_id", ondelete="CASCADE"),
@@ -269,9 +243,7 @@ class QuizResult(Base):
     __tablename__ = "quiz_results"
 
     quiz_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True)
     analysis_id = Column(
         UUID(as_uuid=True),
         ForeignKey("ats_analyses.analysis_id", ondelete="CASCADE"),
@@ -302,9 +274,7 @@ class SkillProgress(Base):
     __tablename__ = "skill_progress"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     skill_name = Column(String(255), nullable=False)
     # True when the skill was later found present in a newer resume (no longer a gap)
     is_resolved = Column(Boolean, nullable=False, default=False)
@@ -379,9 +349,7 @@ class UserFeedback(Base):
     __tablename__ = "user_feedback"
 
     feedback_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True)
     category = Column(String(50), nullable=False, default="general")  # bug, suggestion, general
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

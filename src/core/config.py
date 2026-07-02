@@ -1,8 +1,8 @@
 """Application configuration management."""
 
-import os
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
     # Clerk Auth
     CLERK_FRONTEND_API: str = ""  # e.g. "your-app.clerk.accounts.dev"
-    CLERK_SECRET_KEY: str = ""    # sk_live_xxx or sk_test_xxx
+    CLERK_SECRET_KEY: str = ""  # sk_live_xxx or sk_test_xxx
 
     # Caching
     CACHE_TTL_SECONDS: int = 3600

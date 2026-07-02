@@ -9,11 +9,10 @@ Measures and tracks:
 Uses sample evaluation datasets to establish baselines and measure improvements.
 """
 
-import json
 import time
-from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Dict, List
 
 from src.core.logger import get_logger
 
@@ -27,8 +26,16 @@ SAMPLE_RESUMES = [
         "id": "eval_resume_1",
         "title": "Senior Python Developer",
         "skills": [
-            "Python", "Django", "FastAPI", "PostgreSQL", "Docker",
-            "AWS", "REST APIs", "Git", "CI/CD", "Agile",
+            "Python",
+            "Django",
+            "FastAPI",
+            "PostgreSQL",
+            "Docker",
+            "AWS",
+            "REST APIs",
+            "Git",
+            "CI/CD",
+            "Agile",
         ],
         "text": """Senior Python Developer with 5 years of experience building
         scalable web applications using Django and FastAPI. Proficient in
@@ -40,8 +47,16 @@ SAMPLE_RESUMES = [
         "id": "eval_resume_2",
         "title": "Full Stack Engineer",
         "skills": [
-            "JavaScript", "React", "Node.js", "TypeScript", "MongoDB",
-            "GraphQL", "AWS", "Docker", "Jest", "Agile",
+            "JavaScript",
+            "React",
+            "Node.js",
+            "TypeScript",
+            "MongoDB",
+            "GraphQL",
+            "AWS",
+            "Docker",
+            "Jest",
+            "Agile",
         ],
         "text": """Full Stack Engineer with expertise in JavaScript, React,
         and Node.js. Experience building TypeScript applications with MongoDB
@@ -55,8 +70,15 @@ SAMPLE_JOB_DESCRIPTIONS = [
         "id": "eval_jd_1",
         "title": "Backend Python Developer",
         "required_skills": [
-            "Python", "FastAPI", "PostgreSQL", "Docker", "AWS",
-            "REST APIs", "Git", "Testing", "CI/CD",
+            "Python",
+            "FastAPI",
+            "PostgreSQL",
+            "Docker",
+            "AWS",
+            "REST APIs",
+            "Git",
+            "Testing",
+            "CI/CD",
         ],
         "text": """We are looking for a Backend Python Developer with strong
         experience in FastAPI, PostgreSQL, and Docker. Must have AWS cloud
@@ -67,8 +89,15 @@ SAMPLE_JOB_DESCRIPTIONS = [
         "id": "eval_jd_2",
         "title": "React Frontend Developer",
         "required_skills": [
-            "React", "TypeScript", "JavaScript", "CSS", "Testing",
-            "GraphQL", "Git", "Agile", "Performance Optimization",
+            "React",
+            "TypeScript",
+            "JavaScript",
+            "CSS",
+            "Testing",
+            "GraphQL",
+            "Git",
+            "Agile",
+            "Performance Optimization",
         ],
         "text": """Seeking a React Frontend Developer proficient in TypeScript
         and modern JavaScript. Must have CSS expertise, testing experience,
@@ -154,26 +183,18 @@ class EvaluationFramework:
             return self._empty_result(f"{resume_id}_{jd_id}")
 
         expected_matched = set(s.lower() for s in expected["expected_matched"])
-        expected_missing = set(s.lower() for s in expected["expected_missing"])
+        set(s.lower() for s in expected["expected_missing"])
         pred_matched = set(s.lower() for s in predicted_matched)
-        pred_missing = set(s.lower() for s in predicted_missing)
+        set(s.lower() for s in predicted_missing)
 
         # Calculate precision and recall for matched skills
         true_positives = pred_matched & expected_matched
         false_positives = pred_matched - expected_matched
         false_negatives = expected_matched - pred_matched
 
-        precision = (
-            len(true_positives) / len(pred_matched) if pred_matched else 0.0
-        )
-        recall = (
-            len(true_positives) / len(expected_matched) if expected_matched else 0.0
-        )
-        f1 = (
-            2 * precision * recall / (precision + recall)
-            if (precision + recall) > 0
-            else 0.0
-        )
+        precision = len(true_positives) / len(pred_matched) if pred_matched else 0.0
+        recall = len(true_positives) / len(expected_matched) if expected_matched else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
         # Check if score is in expected range
         score_min, score_max = expected["expected_score_range"]
@@ -198,15 +219,10 @@ class EvaluationFramework:
         )
 
         self.results_history.append(result)
-        logger.info(
-            f"Evaluation: P={precision:.2f}, R={recall:.2f}, F1={f1:.2f}, "
-            f"Score in range: {score_in_range}"
-        )
+        logger.info(f"Evaluation: P={precision:.2f}, R={recall:.2f}, F1={f1:.2f}, " f"Score in range: {score_in_range}")
         return result
 
-    def evaluate_scoring_consistency(
-        self, scores: List[float]
-    ) -> float:
+    def evaluate_scoring_consistency(self, scores: List[float]) -> float:
         """Evaluate how consistent scores are across multiple runs.
 
         Args:
@@ -220,7 +236,7 @@ class EvaluationFramework:
 
         mean_score = sum(scores) / len(scores)
         variance = sum((s - mean_score) ** 2 for s in scores) / len(scores)
-        std_dev = variance ** 0.5
+        std_dev = variance**0.5
 
         # Consistency = 1 - normalized std deviation
         # Max acceptable std dev is 10 points
@@ -280,9 +296,7 @@ class EvaluationFramework:
                 "avg_recall": round(avg_recall, 4),
                 "avg_f1": round(avg_f1, 4),
                 "scores_in_range_pct": round(
-                    sum(1 for r in self.results_history if r.score_in_range)
-                    / len(self.results_history)
-                    * 100,
+                    sum(1 for r in self.results_history if r.score_in_range) / len(self.results_history) * 100,
                     1,
                 ),
             },
@@ -316,7 +330,5 @@ class EvaluationFramework:
         return {
             "resumes": SAMPLE_RESUMES,
             "job_descriptions": SAMPLE_JOB_DESCRIPTIONS,
-            "expected_matches": {
-                str(k): v for k, v in EXPECTED_MATCHES.items()
-            },
+            "expected_matches": {str(k): v for k, v in EXPECTED_MATCHES.items()},
         }

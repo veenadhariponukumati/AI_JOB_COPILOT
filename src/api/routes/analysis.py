@@ -3,24 +3,28 @@
 import json
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from sqlalchemy.orm import Session
 
-from src.core.rate_limit import limiter
-
-from src.nlp.skill_normalizer import SkillNormalizer
+from src.api.auth import get_optional_user
 from src.api.schemas.requests import (
     AnalysisRunRequest,
-    FeedbackRequest,
     JobDescriptionUploadRequest,
     ResumeUploadRequest,
 )
 from src.api.schemas.responses import (
     AnalysisResponse,
-    ErrorResponse,
     HistoryItem,
     HistoryResponse,
     JobDescriptionUploadResponse,
@@ -28,30 +32,30 @@ from src.api.schemas.responses import (
     ScoreBreakdown,
     SkillDetail,
 )
-from src.api.auth import get_optional_user
 from src.cache.cache_manager import get_cache
 from src.core.config import get_settings
 from src.core.exceptions import AppException
 from src.core.logger import get_logger
+from src.core.rate_limit import limiter
 from src.database.models import (
-    ATSAnalysis,
     AnalysisStatus,
+    ATSAnalysis,
     DocumentChunk,
     JobDescription,
     Resume,
-    User,
     SkillProgress,
+    User,
 )
-from src.database.session import get_db_dependency, SessionLocal
+from src.database.session import SessionLocal, get_db_dependency
 from src.matching.engine import (
-    HybridMatchingEngine,
     NEGATED_EVIDENCE_MARKERS,
     SEMANTIC_CONFIDENCE_THRESHOLD,
+    HybridMatchingEngine,
 )
 from src.matching.explainer import ExplainabilityEngine
 from src.nlp.extractor import SkillExtractor
 from src.nlp.parser import DocumentParser
-from src.nlp.skill_normalizer import deterministic_normalize
+from src.nlp.skill_normalizer import SkillNormalizer, deterministic_normalize
 from src.rag.chunker import DocumentChunker
 from src.rag.embedder import EmbeddingGenerator
 from src.rag.retriever import SemanticRetriever
@@ -146,20 +150,13 @@ def _semantic_evidence_traceable(group: Dict, resume_skills: List[Dict]) -> bool
     if any(marker in evidence_lower for marker in NEGATED_EVIDENCE_MARKERS):
         return False
 
-    resume_keys = {
-        deterministic_normalize(skill.get("name", ""))
-        for skill in resume_skills
-        if skill.get("name")
-    }
+    resume_keys = {deterministic_normalize(skill.get("name", "")) for skill in resume_skills if skill.get("name")}
     resume_keys |= {
         deterministic_normalize(skill.get("normalized_name", ""))
         for skill in resume_skills
         if skill.get("normalized_name")
     }
-    if any(
-        deterministic_normalize(term) in resume_keys
-        for term in group.get("original_resume_terms", [])
-    ):
+    if any(deterministic_normalize(term) in resume_keys for term in group.get("original_resume_terms", [])):
         return True
 
     evidence_key = deterministic_normalize(evidence)
@@ -314,20 +311,16 @@ def _emit_ats_debug_trace(
             "normalized_matches": [
                 m
                 for m in matched_skills
-                if m.get("matched_by") == "normalized"
-                and "alias" not in m.get("match_reason", "").lower()
+                if m.get("matched_by") == "normalized" and "alias" not in m.get("match_reason", "").lower()
             ],
             "alias_matches": [
                 m
                 for m in matched_skills
-                if m.get("matched_by") == "normalized"
-                and "alias" in m.get("match_reason", "").lower()
+                if m.get("matched_by") == "normalized" and "alias" in m.get("match_reason", "").lower()
             ],
             "semantic_matches": [m for m in matched_skills if m.get("matched_by") == "semantic"],
             "rag_matches": [m for m in matched_skills if m.get("matched_by") == "rag"],
-            "alternative_group_matches": [
-                m for m in matched_skills if m.get("matched_by") == "alternative_group"
-            ],
+            "alternative_group_matches": [m for m in matched_skills if m.get("matched_by") == "alternative_group"],
         },
         "rag": {
             "query_terms": rag_query_terms,
@@ -382,7 +375,8 @@ def _extract_skills_background(resume_id: str, resume_text: str) -> None:
         raw_skills = extractor.extract_skills(resume_text)
         extracted_skills = [
             {"skill": s.get("name", ""), "category": s.get("category", "technical")}
-            for s in raw_skills if s.get("name")
+            for s in raw_skills
+            if s.get("name")
         ]
         sections_with_skills = dict(resume.parsed_sections or {})
         sections_with_skills["_skills"] = extracted_skills
@@ -441,9 +435,7 @@ async def upload_resume(
         db.flush()
 
         # Chunk and embed
-        chunks = chunker.chunk_document(
-            parsed["raw_text"], parsed["sections"], "resume"
-        )
+        chunks = chunker.chunk_document(parsed["raw_text"], parsed["sections"], "resume")
         chunk_texts = [c["text"] for c in chunks]
         embeddings = embedder.generate_embeddings_batch(chunk_texts)
 
@@ -461,9 +453,7 @@ async def upload_resume(
         db.commit()
 
         # Skill extraction runs after the response is sent, not blocking the upload
-        background_tasks.add_task(
-            _extract_skills_background, str(resume.resume_id), body.text
-        )
+        background_tasks.add_task(_extract_skills_background, str(resume.resume_id), body.text)
 
         response_data = {
             "success": True,
@@ -494,6 +484,7 @@ async def upload_resume_file(
 ):
     """Accept a PDF or text file, extract text, then delegate to the normal upload logic."""
     import io
+
     raw = await file.read()
     filename = file.filename or "resume"
 
@@ -501,10 +492,9 @@ async def upload_resume_file(
     if filename.lower().endswith(".pdf") or file.content_type == "application/pdf":
         try:
             import PyPDF2
+
             reader = PyPDF2.PdfReader(io.BytesIO(raw))
-            text = "\n".join(
-                page.extract_text() or "" for page in reader.pages
-            ).strip()
+            text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"PDF parsing failed: {e}")
     else:
@@ -514,6 +504,7 @@ async def upload_resume_file(
         raise HTTPException(status_code=422, detail="Could not extract enough text from the file.")
 
     from src.api.schemas.requests import ResumeUploadRequest as Req
+
     req = Req(text=text, filename=filename)
     return await upload_resume(
         request=request,
@@ -563,9 +554,7 @@ async def upload_job_description(
         db.flush()
 
         # Chunk and embed
-        chunks = chunker.chunk_document(
-            parsed["raw_text"], parsed["sections"], "job_description"
-        )
+        chunks = chunker.chunk_document(parsed["raw_text"], parsed["sections"], "job_description")
         chunk_texts = [c["text"] for c in chunks]
         embeddings = embedder.generate_embeddings_batch(chunk_texts)
 
@@ -615,9 +604,7 @@ def _run_analysis_background(
     db = SessionLocal()
     start_time = time.time()
     try:
-        analysis = db.query(ATSAnalysis).filter(
-            ATSAnalysis.analysis_id == analysis_id
-        ).first()
+        analysis = db.query(ATSAnalysis).filter(ATSAnalysis.analysis_id == analysis_id).first()
         if not analysis:
             return
 
@@ -641,7 +628,8 @@ def _run_analysis_background(
         if stored_skills:
             resume_skills = [
                 {"name": s["skill"], "category": s.get("category", "technical"), "confidence": 1.0, "evidence": ""}
-                for s in stored_skills if s.get("skill")
+                for s in stored_skills
+                if s.get("skill")
             ]
             cache.set(resume_extract_key, resume_skills, "skill_extract")
             logger.info(f"[TIMING] Step 1 resume skills loaded from stored data ({len(resume_skills)} skills)")
@@ -699,12 +687,12 @@ def _run_analysis_background(
 
         # Alias resolution runs outside cache - always fresh, not affected by stale cache
         from src.nlp.skill_normalizer import resolve_ai_tool_aliases
+
         alias_partials = resolve_ai_tool_aliases(resume_skills, jd_skills)
         for partial in alias_partials:
             key = deterministic_normalize(partial["canonical_skill"])
             idx = next(
-                (i for i, g in enumerate(canonical_groups)
-                 if deterministic_normalize(g["canonical_skill"]) == key),
+                (i for i, g in enumerate(canonical_groups) if deterministic_normalize(g["canonical_skill"]) == key),
                 None,
             )
             if idx is None:
@@ -723,9 +711,9 @@ def _run_analysis_background(
         if not semantic_terms:
             semantic_terms = {s["name"] for s in jd_skills}
         jd_skill_names = sorted(semantic_terms)
-        skipped_retrieval = sorted(
-            {s["name"] for s in jd_skills} - set(jd_skill_names)
-        ) if _debug_trace_enabled() else []
+        skipped_retrieval = (
+            sorted({s["name"] for s in jd_skills} - set(jd_skill_names)) if _debug_trace_enabled() else []
+        )
         rag_diagnostics = {} if _debug_trace_enabled() else None
         t2 = time.time()
         semantic_evidence = retriever.retrieve_for_analysis(
@@ -747,31 +735,41 @@ def _run_analysis_background(
             engine = matcher
 
         score_result = engine.calculate_score(
-            resume_skills, jd_skills, semantic_evidence,
+            resume_skills,
+            jd_skills,
+            semantic_evidence,
             canonical_groups=canonical_groups,
             alternative_groups=alternative_groups,
         )
 
         matched_keys = _matched_skill_keys(score_result)
         queried_keys = {deterministic_normalize(skill) for skill in jd_skill_names}
-        fallback_skill_names = sorted({
-            skill["name"] for skill in jd_skills
-            if deterministic_normalize(skill["name"]) not in matched_keys
-            and deterministic_normalize(skill["name"]) not in queried_keys
-        })
+        fallback_skill_names = sorted(
+            {
+                skill["name"]
+                for skill in jd_skills
+                if deterministic_normalize(skill["name"]) not in matched_keys
+                and deterministic_normalize(skill["name"]) not in queried_keys
+            }
+        )
         if fallback_skill_names:
             fallback_evidence = retriever.retrieve_for_analysis(
-                resume_id=resume_id, jd_id=jd_id, query_skills=fallback_skill_names,
+                resume_id=resume_id,
+                jd_id=jd_id,
+                query_skills=fallback_skill_names,
                 diagnostics=rag_diagnostics,
             )
             semantic_evidence.update(fallback_evidence)
             jd_skill_names = sorted(set(jd_skill_names) | set(fallback_skill_names))
-            skipped_retrieval = sorted(
-                {s["name"] for s in jd_skills} - set(jd_skill_names)
-            ) if _debug_trace_enabled() else []
+            skipped_retrieval = (
+                sorted({s["name"] for s in jd_skills} - set(jd_skill_names)) if _debug_trace_enabled() else []
+            )
             score_result = engine.calculate_score(
-                resume_skills, jd_skills, semantic_evidence,
-                canonical_groups=canonical_groups, alternative_groups=alternative_groups,
+                resume_skills,
+                jd_skills,
+                semantic_evidence,
+                canonical_groups=canonical_groups,
+                alternative_groups=alternative_groups,
             )
 
         if _debug_trace_enabled():
@@ -816,11 +814,15 @@ def _run_analysis_background(
         resume_sections = reparsed.get("sections") or resume.parsed_sections or {}
         bullet_dicts = parser.extract_bullet_points(resume_text, sections=resume_sections if resume_sections else None)
         selected_bullets = _select_representative_bullets(bullet_dicts, limit=8)
-        optimized_bullets = explainer.optimize_bullets(
-            bullets=selected_bullets,
-            target_skills=jd_skill_names_all,
-            missing_skills=missing_skill_names,
-        ) if selected_bullets else []
+        optimized_bullets = (
+            explainer.optimize_bullets(
+                bullets=selected_bullets,
+                target_skills=jd_skill_names_all,
+                missing_skills=missing_skill_names,
+            )
+            if selected_bullets
+            else []
+        )
 
         analysis.optimized_bullets = optimized_bullets
         analysis.processing_time_ms = processing_time
@@ -837,12 +839,14 @@ def _run_analysis_background(
                     .first()
                 )
                 if not existing:
-                    db.add(SkillProgress(
-                        user_id=analysis.user_id,
-                        skill_name=skill_name,
-                        highest_level_passed="none",
-                        ready_to_apply="false",
-                    ))
+                    db.add(
+                        SkillProgress(
+                            user_id=analysis.user_id,
+                            skill_name=skill_name,
+                            highest_level_passed="none",
+                            ready_to_apply="false",
+                        )
+                    )
                 elif existing.is_resolved:
                     # Still missing on this newer analysis: un-resolve it
                     existing.is_resolved = False
@@ -851,15 +855,10 @@ def _run_analysis_background(
             # matched (the user switched to a resume that has it), mark it
             # resolved instead of deleting - keeps quiz history intact.
             matched_skill_keys = {
-                deterministic_normalize(m.get("skill", ""))
-                for m in score_result.get("matched_skills", [])
+                deterministic_normalize(m.get("skill", "")) for m in score_result.get("matched_skills", [])
             }
             if matched_skill_keys:
-                tracked = (
-                    db.query(SkillProgress)
-                    .filter(SkillProgress.user_id == analysis.user_id)
-                    .all()
-                )
+                tracked = db.query(SkillProgress).filter(SkillProgress.user_id == analysis.user_id).all()
                 for row in tracked:
                     if deterministic_normalize(row.skill_name) in matched_skill_keys:
                         row.is_resolved = True
@@ -926,16 +925,13 @@ async def run_analysis(
     )
 
 
-
 @router.get("/analysis/{analysis_id}", response_model=AnalysisResponse)
 async def get_analysis(
     analysis_id: str,
     db: Session = Depends(get_db_dependency),
 ):
     """Retrieve a completed analysis by ID."""
-    analysis = db.query(ATSAnalysis).filter(
-        ATSAnalysis.analysis_id == analysis_id
-    ).first()
+    analysis = db.query(ATSAnalysis).filter(ATSAnalysis.analysis_id == analysis_id).first()
 
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -995,13 +991,7 @@ async def get_history(
 ):
     """Retrieve analysis history with pagination."""
     total = db.query(ATSAnalysis).count()
-    analyses = (
-        db.query(ATSAnalysis)
-        .order_by(ATSAnalysis.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    analyses = db.query(ATSAnalysis).order_by(ATSAnalysis.created_at.desc()).offset(offset).limit(limit).all()
 
     items = []
     for a in analyses:

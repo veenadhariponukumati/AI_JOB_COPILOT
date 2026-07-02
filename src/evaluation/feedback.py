@@ -7,7 +7,6 @@ Implements iterative improvement through:
 - Historical revision tracking
 """
 
-from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
 
@@ -42,9 +41,7 @@ class FeedbackManager:
             Feedback record details.
         """
         # Get original analysis
-        analysis = self.db.query(ATSAnalysis).filter(
-            ATSAnalysis.analysis_id == analysis_id
-        ).first()
+        analysis = self.db.query(ATSAnalysis).filter(ATSAnalysis.analysis_id == analysis_id).first()
 
         if not analysis:
             return {"error": "Analysis not found"}
@@ -62,10 +59,7 @@ class FeedbackManager:
         self.db.add(feedback)
         self.db.commit()
 
-        logger.info(
-            f"Score adjustment: {original_score} -> {revised_score} "
-            f"(analysis: {analysis_id})"
-        )
+        logger.info(f"Score adjustment: {original_score} -> {revised_score} " f"(analysis: {analysis_id})")
 
         return {
             "feedback_id": str(feedback.feedback_id),
@@ -141,9 +135,7 @@ class FeedbackManager:
             "comments": comments,
         }
 
-    def get_feedback_history(
-        self, analysis_id: Optional[UUID] = None, limit: int = 50
-    ) -> List[Dict]:
+    def get_feedback_history(self, analysis_id: Optional[UUID] = None, limit: int = 50) -> List[Dict]:
         """Retrieve feedback history.
 
         Args:
@@ -212,11 +204,7 @@ class FeedbackManager:
         Returns:
             Trend analysis showing if scores are consistently over/under-estimated.
         """
-        adjustments = (
-            self.db.query(AnalysisFeedback)
-            .filter(AnalysisFeedback.feedback_type == "score_adjustment")
-            .all()
-        )
+        adjustments = self.db.query(AnalysisFeedback).filter(AnalysisFeedback.feedback_type == "score_adjustment").all()
 
         if not adjustments:
             return {"status": "no_adjustments", "trend": "neutral"}
@@ -239,8 +227,6 @@ class FeedbackManager:
             "recommendation": (
                 "Consider reducing base scores"
                 if trend == "overscoring"
-                else "Consider increasing base scores"
-                if trend == "underscoring"
-                else "Scoring appears well-calibrated"
+                else "Consider increasing base scores" if trend == "underscoring" else "Scoring appears well-calibrated"
             ),
         }

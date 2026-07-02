@@ -14,7 +14,7 @@ Rationale:
 """
 
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from src.core.config import get_settings
 from src.core.logger import get_logger
@@ -70,14 +70,11 @@ class DocumentChunker:
             chunks = self._chunk_by_characters(text, document_type)
 
         logger.info(
-            f"Chunked {document_type}: {len(chunks)} chunks "
-            f"(size={self.chunk_size}, overlap={self.chunk_overlap})"
+            f"Chunked {document_type}: {len(chunks)} chunks " f"(size={self.chunk_size}, overlap={self.chunk_overlap})"
         )
         return chunks
 
-    def _chunk_by_sections(
-        self, sections: Dict[str, str], document_type: str
-    ) -> List[Dict]:
+    def _chunk_by_sections(self, sections: Dict[str, str], document_type: str) -> List[Dict]:
         """Chunk document respecting section boundaries.
 
         Each section is chunked independently, preserving logical groupings.
@@ -181,9 +178,7 @@ class DocumentChunker:
 
         return chunks
 
-    def _find_sentence_boundary(
-        self, text: str, target_pos: int, search_range: int = 100
-    ) -> Optional[int]:
+    def _find_sentence_boundary(self, text: str, target_pos: int, search_range: int = 100) -> Optional[int]:
         """Find the nearest sentence boundary near target_pos.
 
         Looks for period, question mark, or exclamation followed by space/newline.

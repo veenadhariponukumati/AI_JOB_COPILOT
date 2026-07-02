@@ -1,6 +1,7 @@
 """Unit tests for the document parser module."""
 
 import pytest
+
 from src.nlp.parser import DocumentParser
 
 

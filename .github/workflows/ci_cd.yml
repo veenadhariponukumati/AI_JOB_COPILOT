@@ -131,31 +131,7 @@ jobs:
           python -m py_compile src/rag/chunker.py
           python -m py_compile src/matching/engine.py
 
-  deploy:
-    name: Deploy (Production)
-    runs-on: ubuntu-latest
-    needs: [test, build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Package for deployment
-        run: |
-          echo "Packaging application for AWS Lambda deployment..."
-          zip -r deployment.zip src/ requirements.txt
-
-      - name: Deploy to AWS Lambda
-        if: false  # Enable when AWS credentials are configured
-        run: |
-          echo "Deploy step - configure AWS credentials and Lambda function"
-          # aws lambda update-function-code --function-name ai-job-copilot --zip-file fileb://deployment.zip
+# Deployment is not handled by this workflow. The backend deploys via
+# Render's own GitHub integration (auto-deploy on push to main, using
+# render.yaml). The frontend deploys via Vercel's GitHub integration.
+# This workflow is CI only: lint, test, and a basic import/build check.

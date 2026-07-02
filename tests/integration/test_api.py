@@ -6,13 +6,13 @@ response structure, and error handling.
 Note: These tests require a running database or use mocking.
 """
 
-import pytest
 import inspect
-from unittest.mock import patch, MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
 
 from src.api.main import app
-from src.api.routes.analysis import run_analysis, _run_analysis_background
+from src.api.routes.analysis import _run_analysis_background, run_analysis
 
 
 @pytest.fixture

@@ -5,13 +5,13 @@ and stores them in PostgreSQL with pgvector.
 """
 
 import hashlib
-from typing import Dict, List, Optional
+from typing import List
 
 from openai import OpenAI
 
 from src.core.config import get_settings
-from src.core.logger import get_logger
 from src.core.exceptions import EmbeddingError
+from src.core.logger import get_logger
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -47,7 +47,6 @@ class EmbeddingGenerator:
             response = self.client.embeddings.create(
                 model=self.model,
                 input=truncated,
-                
             )
 
             embedding = response.data[0].embedding
@@ -58,9 +57,7 @@ class EmbeddingGenerator:
             logger.error(f"Embedding generation failed: {e}")
             raise EmbeddingError(f"Failed to generate embedding: {str(e)}")
 
-    def generate_embeddings_batch(
-        self, texts: List[str], batch_size: int = 20
-    ) -> List[List[float]]:
+    def generate_embeddings_batch(self, texts: List[str], batch_size: int = 20) -> List[List[float]]:
         """Generate embeddings for multiple texts in batches.
 
         Args:
@@ -86,22 +83,18 @@ class EmbeddingGenerator:
                 response = self.client.embeddings.create(
                     model=self.model,
                     input=batch,
-    
                 )
 
                 batch_embeddings = [item.embedding for item in response.data]
                 all_embeddings.extend(batch_embeddings)
 
                 logger.debug(
-                    f"Generated batch embeddings: {len(batch_embeddings)} vectors "
-                    f"(batch {i // batch_size + 1})"
+                    f"Generated batch embeddings: {len(batch_embeddings)} vectors " f"(batch {i // batch_size + 1})"
                 )
 
             except Exception as e:
                 logger.error(f"Batch embedding failed at index {i}: {e}")
-                raise EmbeddingError(
-                    f"Batch embedding generation failed: {str(e)}"
-                )
+                raise EmbeddingError(f"Batch embedding generation failed: {str(e)}")
 
         return all_embeddings
 

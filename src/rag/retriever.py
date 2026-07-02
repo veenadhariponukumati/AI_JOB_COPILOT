@@ -4,15 +4,15 @@ Performs semantic search using pgvector for nearest-neighbor retrieval,
 then ranks and filters results by similarity threshold.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.core.config import get_settings
-from src.core.logger import get_logger
 from src.core.exceptions import RetrievalError
+from src.core.logger import get_logger
 from src.rag.embedder import EmbeddingGenerator
 
 logger = get_logger(__name__)
@@ -172,11 +172,7 @@ class SemanticRetriever:
                 "resume_evidence": resume_chunks,
                 "jd_context": jd_chunks,
                 "has_evidence": len(resume_chunks) > 0,
-                "max_similarity": (
-                    max(c["similarity"] for c in resume_chunks)
-                    if resume_chunks
-                    else 0.0
-                ),
+                "max_similarity": (max(c["similarity"] for c in resume_chunks) if resume_chunks else 0.0),
             }
 
         logger.info(
@@ -243,28 +239,23 @@ class SemanticRetriever:
     ) -> Dict[str, Any]:
         """Return threshold-free retrieval diagnostics using an existing query embedding."""
         counts = self.db.execute(
-            text(
-                """
+            text("""
                 SELECT COUNT(*) AS total_chunks, COUNT(embedding) AS non_null_embeddings
                 FROM document_chunks
                 WHERE resume_id = :resume_id
-                """
-            ),
+                """),
             {"resume_id": str(resume_id)},
         ).fetchone()
         rows_exist = self.db.execute(
-            text(
-                """
+            text("""
                 SELECT EXISTS(
                     SELECT 1 FROM document_chunks WHERE resume_id = :resume_id
                 ) AS rows_exist
-                """
-            ),
+                """),
             {"resume_id": str(resume_id)},
         ).scalar()
         rows = self.db.execute(
-            text(
-                """
+            text("""
                 SELECT
                     chunk_id,
                     chunk_text,
@@ -274,8 +265,7 @@ class SemanticRetriever:
                 WHERE resume_id = :resume_id AND embedding IS NOT NULL
                 ORDER BY embedding <=> CAST(:query_embedding AS vector) ASC
                 LIMIT :top_k
-                """
-            ),
+                """),
             {
                 "resume_id": str(resume_id),
                 "query_embedding": str(query_embedding),
@@ -303,9 +293,7 @@ class SemanticRetriever:
     def get_retrieval_stats(self) -> Dict:
         """Get retrieval statistics for monitoring."""
         try:
-            result = self.db.execute(
-                text("SELECT COUNT(*) as total FROM document_chunks WHERE embedding IS NOT NULL")
-            )
+            result = self.db.execute(text("SELECT COUNT(*) as total FROM document_chunks WHERE embedding IS NOT NULL"))
             total_chunks = result.scalar()
 
             return {

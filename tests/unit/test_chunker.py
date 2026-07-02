@@ -1,6 +1,7 @@
 """Unit tests for the RAG chunking module."""
 
 import pytest
+
 from src.rag.chunker import DocumentChunker
 
 
@@ -26,9 +27,7 @@ class TestDocumentChunker:
             "experience": "Worked at Company A for 5 years building APIs.",
             "skills": "Python, FastAPI, PostgreSQL, Docker",
         }
-        chunks = chunker.chunk_document(
-            "full text", sections=sections, document_type="resume"
-        )
+        chunks = chunker.chunk_document("full text", sections=sections, document_type="resume")
         assert len(chunks) >= 3
         section_types = [c["section_type"] for c in chunks]
         assert "summary" in section_types

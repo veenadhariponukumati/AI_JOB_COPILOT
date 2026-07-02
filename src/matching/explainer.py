@@ -10,9 +10,10 @@ Every score output includes:
 - Which requirements were missing
 - Supporting evidence from the resume
 """
-import re
+
 import json
-from typing import Dict, List, Optional
+import re
+from typing import Dict, List
 
 from openai import OpenAI
 
@@ -100,7 +101,7 @@ class ExplainabilityEngine:
         value = re.sub(r"[^a-z0-9]+", "", value)
 
         return value
-    
+
     def __init__(self):
         self.client = OpenAI(
             api_key=settings.OPENAI_API_KEY,
@@ -152,7 +153,8 @@ class ExplainabilityEngine:
                 semantic_score=score_result.get("semantic_score", 0),
                 matched_count=len(score_result.get("matched_skills", [])),
                 missing_count=len(score_result.get("missing_skills", [])),
-                total_required=len(score_result.get("matched_skills", [])) + len(score_result.get("missing_skills", [])),
+                total_required=len(score_result.get("matched_skills", []))
+                + len(score_result.get("missing_skills", [])),
                 matched_skills_text=matched_text or "None",
                 missing_skills_text=missing_text or "None",
                 category_breakdown=category_text or "N/A",
@@ -178,7 +180,7 @@ class ExplainabilityEngine:
                 semantic_evidence,
                 score_result.get("matched_skills", []),
                 resume_text,
-)
+            )
 
             logger.info("Generated explainability report")
             return explanation
@@ -238,15 +240,17 @@ class ExplainabilityEngine:
 
             except Exception as e:
                 logger.warning(f"Bullet optimization failed: {e}")
-                optimized.append({
-                    "original": bullet,
-                    "optimized": bullet,
-                    "section": section,
-                    "section_label": section_label,
-                    "changes_made": [],
-                    "keywords_added": [],
-                    "score_impact": "unknown",
-                })
+                optimized.append(
+                    {
+                        "original": bullet,
+                        "optimized": bullet,
+                        "section": section,
+                        "section_label": section_label,
+                        "changes_made": [],
+                        "keywords_added": [],
+                        "score_impact": "unknown",
+                    }
+                )
 
         return optimized
 
@@ -259,7 +263,7 @@ class ExplainabilityEngine:
         """Compile evidence for both semantic and keyword matches."""
 
         evidence_by_skill = {}
-        resume_search = self._normalize_text(resume_text)
+        self._normalize_text(resume_text)
 
         for match in matched_skills:
             skill = match.get("skill", "")
@@ -293,9 +297,7 @@ class ExplainabilityEngine:
             semantic = semantic_evidence.get(skill, {})
             if semantic.get("has_evidence"):
                 snippets = [
-                    chunk["text"][:300]
-                    for chunk in semantic.get("resume_evidence", [])[:2]
-                    if chunk.get("text")
+                    chunk["text"][:300] for chunk in semantic.get("resume_evidence", [])[:2] if chunk.get("text")
                 ]
                 if snippets:
                     evidence_by_skill[key] = {
@@ -354,12 +356,10 @@ class ExplainabilityEngine:
                 f"achieving an overall score of {score_result.get('overall_score', 0)}%."
             ),
             "points_awarded": [
-                {"reason": f"Matched skill: {m['skill']}", "skills": [m["skill"]], "points": 5}
-                for m in matched[:5]
+                {"reason": f"Matched skill: {m['skill']}", "skills": [m["skill"]], "points": 5} for m in matched[:5]
             ],
             "points_deducted": [
-                {"reason": f"Missing skill: {m['skill']}", "skills": [m["skill"]], "points": -5}
-                for m in missing[:5]
+                {"reason": f"Missing skill: {m['skill']}", "skills": [m["skill"]], "points": -5} for m in missing[:5]
             ],
             "requirements_matched": [
                 {"requirement": m["skill"], "evidence": f"Matched via {m.get('match_type', 'analysis')}"}

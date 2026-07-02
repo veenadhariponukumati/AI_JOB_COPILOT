@@ -4,19 +4,19 @@ Verifies the Clerk session token from the Authorization header,
 upserts the user into our DB, and returns the User ORM object.
 """
 
-import httpx
-import jwt
 from functools import lru_cache
 from typing import Optional
 
+import httpx
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from src.database.session import get_db_dependency as get_db
-from src.database.models import User
 from src.core.config import get_settings
 from src.core.logger import get_logger
+from src.database.models import User
+from src.database.session import get_db_dependency as get_db
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -36,10 +36,8 @@ def _get_clerk_jwks() -> dict:
 def _verify_clerk_token(token: str) -> dict:
     """Decode and verify a Clerk JWT. Returns the claims dict."""
     try:
-        jwks = _get_clerk_jwks()
-        public_keys = jwt.PyJWKClient(
-            f"https://{settings.CLERK_FRONTEND_API}/.well-known/jwks.json"
-        )
+        _get_clerk_jwks()
+        public_keys = jwt.PyJWKClient(f"https://{settings.CLERK_FRONTEND_API}/.well-known/jwks.json")
         signing_key = public_keys.get_signing_key_from_jwt(token)
         claims = jwt.decode(
             token,

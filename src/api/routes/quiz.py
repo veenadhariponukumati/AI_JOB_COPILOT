@@ -1,11 +1,10 @@
 """API routes for skill validation quizzes."""
 
 import json
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
 from openai import OpenAI
+from sqlalchemy.orm import Session
 
 from src.api.schemas.requests import QuizStartRequest, QuizSubmitRequest
 from src.api.schemas.responses import (
@@ -86,9 +85,7 @@ async def start_quiz(
     """
     try:
         # Validate analysis exists
-        analysis = db.query(ATSAnalysis).filter(
-            ATSAnalysis.analysis_id == body.analysis_id
-        ).first()
+        analysis = db.query(ATSAnalysis).filter(ATSAnalysis.analysis_id == body.analysis_id).first()
         if not analysis:
             raise HTTPException(status_code=404, detail="Analysis not found")
 
@@ -98,9 +95,7 @@ async def start_quiz(
             base_url=settings.OPENAI_API_BASE if settings.OPENAI_API_BASE else None,
         )
 
-        skill_context = SKILL_DISAMBIGUATION.get(
-            body.skill.strip().lower(), body.skill
-        )
+        skill_context = SKILL_DISAMBIGUATION.get(body.skill.strip().lower(), body.skill)
         prompt = QUIZ_GENERATION_PROMPT.format(
             num_questions=body.num_questions,
             skill_context=skill_context,
@@ -165,9 +160,7 @@ async def submit_quiz(
 ):
     """Submit quiz answers and get results."""
     try:
-        quiz = db.query(QuizResult).filter(
-            QuizResult.quiz_id == request.quiz_id
-        ).first()
+        quiz = db.query(QuizResult).filter(QuizResult.quiz_id == request.quiz_id).first()
         if not quiz:
             raise HTTPException(status_code=404, detail="Quiz not found")
 
@@ -188,13 +181,15 @@ async def submit_quiz(
             if is_correct:
                 correct_count += 1
 
-            details.append({
-                "question_id": i + 1,
-                "user_answer": user_answer,
-                "correct_answer": correct_answer,
-                "is_correct": is_correct,
-                "explanation": question.get("explanation", ""),
-            })
+            details.append(
+                {
+                    "question_id": i + 1,
+                    "user_answer": user_answer,
+                    "correct_answer": correct_answer,
+                    "is_correct": is_correct,
+                    "explanation": question.get("explanation", ""),
+                }
+            )
 
         total = len(questions)
         score = (correct_count / total * 100) if total > 0 else 0
@@ -205,6 +200,7 @@ async def submit_quiz(
         quiz.score = score
         quiz.passed = passed
         from datetime import datetime
+
         now = datetime.utcnow()
         quiz.completed_at = now
         db.commit()

@@ -1,12 +1,11 @@
 """Unit tests for the skill extraction module."""
 
 import pytest
+
 from src.nlp.extractor import (
-    SkillExtractor,
     EXTRACTION_PROMPT,
     GENERIC_WORD_BLOCKLIST,
-    MIN_SKILL_LENGTH,
-    MAX_SKILL_LENGTH,
+    SkillExtractor,
 )
 
 

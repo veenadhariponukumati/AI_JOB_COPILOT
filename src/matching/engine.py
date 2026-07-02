@@ -4,12 +4,11 @@ Combines deterministic matching, lightweight pattern matching, LLM semantic
 canonicalization, RAG evidence, and weighted category scoring.
 """
 
-import re
 from typing import Any, Dict, List, Optional, Set
 
 from src.core.config import get_settings
 from src.core.logger import get_logger
-from src.nlp.skill_normalizer import deterministic_normalize, _is_false_equivalence
+from src.nlp.skill_normalizer import _is_false_equivalence, deterministic_normalize
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -80,19 +79,12 @@ class HybridMatchingEngine:
         # Unified coverage: all matched skills count, semantic at 85% credit vs exact
         total_jd = len(jd_skills) or 1
         exact_count = sum(
-            1 for m in matched_skills
-            if m.get("matched_by") in {"exact", "normalized", "alternative_group"}
+            1 for m in matched_skills if m.get("matched_by") in {"exact", "normalized", "alternative_group"}
         )
-        semantic_count = sum(
-            1 for m in matched_skills
-            if m.get("matched_by") in {"semantic", "rag"}
-        )
+        semantic_count = sum(1 for m in matched_skills if m.get("matched_by") in {"semantic", "rag"})
         unified_coverage = (exact_count + 0.85 * semantic_count) / total_jd
 
-        overall_score = (
-            0.70 * unified_coverage
-            + 0.30 * category_result["score"]
-        )
+        overall_score = 0.70 * unified_coverage + 0.30 * category_result["score"]
 
         result = {
             "overall_score": round(overall_score * 100, 1),
@@ -102,16 +94,10 @@ class HybridMatchingEngine:
             "matched_skills": matched_skills,
             "missing_skills": missing_skills,
             "match_details": {
-                "keyword_matches": [
-                    m for m in matched_skills if m["matched_by"] in {"exact", "normalized"}
-                ],
-                "semantic_matches": [
-                    m for m in matched_skills if m["matched_by"] == "semantic"
-                ],
+                "keyword_matches": [m for m in matched_skills if m["matched_by"] in {"exact", "normalized"}],
+                "semantic_matches": [m for m in matched_skills if m["matched_by"] == "semantic"],
                 "rag_matches": [m for m in matched_skills if m["matched_by"] == "rag"],
-                "alternative_group_matches": [
-                    m for m in matched_skills if m["matched_by"] == "alternative_group"
-                ],
+                "alternative_group_matches": [m for m in matched_skills if m["matched_by"] == "alternative_group"],
                 "synonym_matches": [],
             },
             "telemetry": telemetry,
@@ -419,15 +405,9 @@ class HybridMatchingEngine:
                     matched_names.add(deterministic_normalize(str(value)))
         return matched_names
 
-    def _coverage_score(
-        self, jd_skills: List[Dict], matched_skills: List[Dict], match_types: Set[str]
-    ) -> float:
+    def _coverage_score(self, jd_skills: List[Dict], matched_skills: List[Dict], match_types: Set[str]) -> float:
         total_jd = len(jd_skills) if jd_skills else 1
-        covered = {
-            deterministic_normalize(m["skill"])
-            for m in matched_skills
-            if m.get("matched_by") in match_types
-        }
+        covered = {deterministic_normalize(m["skill"]) for m in matched_skills if m.get("matched_by") in match_types}
         return min(len(covered) / total_jd, 1.0)
 
     def _keyword_match(self, resume_skills: List[Dict], jd_skills: List[Dict]) -> Dict:
@@ -445,13 +425,10 @@ class HybridMatchingEngine:
         synonym_matches = [
             match
             for match in matches
-            if "lightweight alias" in (
+            if "lightweight alias"
+            in (
                 next(
-                    (
-                        m.get("match_reason", "")
-                        for m in result["matched_skills"]
-                        if m["skill"] == match["jd_skill"]
-                    ),
+                    (m.get("match_reason", "") for m in result["matched_skills"] if m["skill"] == match["jd_skill"]),
                     "",
                 )
             )
@@ -508,9 +485,7 @@ class HybridMatchingEngine:
                 return skill
         return None
 
-    def _find_lightweight_match(
-        self, jd_key: str, resume_index: Dict[str, Dict]
-    ) -> Optional[Dict]:
+    def _find_lightweight_match(self, jd_key: str, resume_index: Dict[str, Dict]) -> Optional[Dict]:
         alias = LIGHTWEIGHT_ALIASES.get(jd_key)
         if alias and alias in resume_index:
             return resume_index[alias]

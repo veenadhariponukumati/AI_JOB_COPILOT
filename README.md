@@ -45,8 +45,8 @@ An AI-powered platform that analyzes how well a resume matches a job description
 | Database | PostgreSQL (Neon) + pgvector |
 | AI | OpenAI API (GPT-4o-mini, text-embedding-3-small) |
 | Email | Resend (feedback notifications) |
-| Frontend hosting | Vercel |
-| Backend hosting | Render |
+| Frontend hosting (planned) | Vercel |
+| Backend hosting (planned) | Render |
 | CI | GitHub Actions |
 | Testing | pytest |
 

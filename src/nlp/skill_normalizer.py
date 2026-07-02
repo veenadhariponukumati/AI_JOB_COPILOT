@@ -114,18 +114,22 @@ def resolve_ai_tool_aliases(
         # JD asks for the tool (e.g. Claude) but resume only mentions company (e.g. Anthropic)
         if implied_key in jd_skill_names_normalized and matching_resume_term:
             resume_skill_obj = resume_terms_normalized.get(matching_resume_term)
-            resume_display = resume_skill_obj.get("name", company_term.title()) if resume_skill_obj else company_term.title()
-            partial_matches.append({
-                "canonical_skill": implied_tool,
-                "original_resume_terms": [resume_display],
-                "original_jd_terms": [implied_tool],
-                "category": "technical",
-                "confidence": alias_info["confidence"],
-                "match_status": "partial",
-                "evidence_from_resume": f"Resume mentions '{resume_display}' which implies {implied_tool}.",
-                "evidence_from_jd": f"JD requires '{implied_tool}'.",
-                "match_reason": f"'{resume_display}' is the company/platform behind {implied_tool}. Partial match - {alias_info['tip']}",
-            })
+            resume_display = (
+                resume_skill_obj.get("name", company_term.title()) if resume_skill_obj else company_term.title()
+            )
+            partial_matches.append(
+                {
+                    "canonical_skill": implied_tool,
+                    "original_resume_terms": [resume_display],
+                    "original_jd_terms": [implied_tool],
+                    "category": "technical",
+                    "confidence": alias_info["confidence"],
+                    "match_status": "partial",
+                    "evidence_from_resume": f"Resume mentions '{resume_display}' which implies {implied_tool}.",
+                    "evidence_from_jd": f"JD requires '{implied_tool}'.",
+                    "match_reason": f"'{resume_display}' is the company/platform behind {implied_tool}. Partial match - {alias_info['tip']}",
+                }
+            )
 
     return partial_matches
 
@@ -248,9 +252,7 @@ Return JSON in this exact format:
             # Reject groups that pair up known false-equivalence terms
             # (e.g. LLM incorrectly matching "Java" resume experience to a "JavaScript" JD requirement)
             if any(_is_false_equivalence(r, j) for r in resume_terms for j in jd_terms):
-                logger.warning(
-                    f"Rejected false-equivalence skill group: resume={resume_terms} jd={jd_terms}"
-                )
+                logger.warning(f"Rejected false-equivalence skill group: resume={resume_terms} jd={jd_terms}")
                 continue
 
             coerced_groups.append(
@@ -274,8 +276,7 @@ Return JSON in this exact format:
         for partial in alias_partials:
             key = deterministic_normalize(partial["canonical_skill"])
             idx = next(
-                (i for i, g in enumerate(coerced_groups)
-                 if deterministic_normalize(g["canonical_skill"]) == key),
+                (i for i, g in enumerate(coerced_groups) if deterministic_normalize(g["canonical_skill"]) == key),
                 None,
             )
             if idx is None:
@@ -313,9 +314,7 @@ Return JSON in this exact format:
             normalized.append(item)
         return normalized
 
-    def detect_alternative_groups(
-        self, jd_text: str, jd_skills: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def detect_alternative_groups(self, jd_text: str, jd_skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Detect explicit OR-style alternative requirement groups."""
         groups = []
         skill_names = [skill.get("name", "") for skill in jd_skills]
@@ -329,9 +328,7 @@ Return JSON in this exact format:
         for pattern in patterns:
             for match in re.finditer(pattern, jd_text, flags=re.IGNORECASE):
                 options = self._extract_options(match.group("options"))
-                concrete_options = [
-                    option for option in options if deterministic_normalize(option) != "similar"
-                ]
+                concrete_options = [option for option in options if deterministic_normalize(option) != "similar"]
                 if len(concrete_options) < 2:
                     continue
                 matched_options = [

@@ -5,9 +5,10 @@ Run this script to set up the database schema.
 """
 
 from sqlalchemy import text
-from src.database.session import engine
-from src.database.models import Base
+
 from src.core.logger import get_logger
+from src.database.models import Base
+from src.database.session import engine
 
 logger = get_logger(__name__)
 
@@ -24,7 +25,7 @@ def init_database():
                 logger.warning(f"pgvector not available (RAG embeddings disabled): {ext_err}")
                 conn.rollback()
             try:
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\""))
+                conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
                 conn.commit()
                 logger.info("uuid-ossp extension enabled")
             except Exception as ext_err:
