@@ -220,15 +220,6 @@ Category weights:
 - Behavioral: 0.8x
 - Supporting: 0.6x
 
-## Interview Talking Points
-
-1. **RAG Implementation**: Real vector embeddings stored in pgvector, cosine similarity retrieval, grounded recommendations
-2. **Hybrid Matching**: Combines keyword precision with semantic understanding for robust scoring
-3. **Explainability**: Every score is fully transparent with evidence trails
-4. **Evaluation**: Measurable precision/recall metrics with baseline comparisons
-5. **Production Patterns**: Caching, error handling, logging, CI/CD, structured APIs
-6. **Feedback Loop**: Continuous improvement through recruiter input tracking
-
 ## License
 
 MIT
