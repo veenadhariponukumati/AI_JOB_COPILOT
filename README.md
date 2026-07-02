@@ -45,8 +45,8 @@ An AI-powered platform that analyzes how well a resume matches a job description
 | Database | PostgreSQL (Neon) + pgvector |
 | AI | OpenAI API (GPT-4o-mini, text-embedding-3-small) |
 | Email | Resend (feedback notifications) |
-| Frontend hosting (planned) | Vercel |
-| Backend hosting (planned) | Render |
+| Frontend hosting | Vercel |
+| Backend hosting | Render |
 | CI | GitHub Actions |
 | Testing | pytest |
 
@@ -168,6 +168,8 @@ npm run dev
 ```
 
 The frontend proxies `/backend/*` requests to the FastAPI server (configurable via the `BACKEND_URL` env var for production).
+
+Note: `runtime.txt` pins the backend to Python 3.11.9 for Render deploys. Newer Python versions (3.13+) break the `pandas==2.1.3` build, so keep this pin if you fork/redeploy.
 
 ### 6. Run tests
 
