@@ -78,6 +78,12 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Initialize test database schema
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_job_copilot_test
+        run: |
+          python -m src.database.init_db
+
       - name: Run unit tests
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_job_copilot_test
