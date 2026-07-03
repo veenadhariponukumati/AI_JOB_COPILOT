@@ -1,37 +1,37 @@
-# AI Job Copilot – ATS Resume Intelligence Platform
+# AI Job Copilot
 
-An AI-powered platform that analyzes how well a resume matches a job description, using retrieval-augmented generation (RAG), hybrid keyword + semantic matching, explainable scoring, and skill-gap quizzes.
+A resume-to-job-description matching platform. It parses a resume and a job description, extracts skills using an LLM, retrieves supporting evidence from the resume with a RAG pipeline, and produces a weighted match score with an explainable breakdown, missing-skill list, and optional skill-validation quizzes.
 
-## Architecture Overview
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Next.js 16 Frontend (App Router)              │
+│                Next.js 16 Frontend (App Router)                  │
 │  Home │ My Resume │ Analyze │ My Skill Validation │ Dashboard    │
 │                    │ Feedback                                    │
-│              Auth: Clerk                                         │
+│              Auth: Clerk (clerkMiddleware)                       │
 └──────────────────────────────┬──────────────────────────────────┘
-                               │ /backend/* rewrite proxy
+                               │ /backend/* rewrite proxy (next.config.ts)
 ┌──────────────────────────────▼──────────────────────────────────┐
 │                      FastAPI REST API                            │
-│  /resume/*  /job/upload  /analysis/*  /quiz/*                   │
-│  /users/me/*  /feedback                                          │
+│  /resume/*  /job/upload  /analysis/*  /quiz/*                    │
+│  /users/me/*  /feedback  /health  /metrics/cache                 │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────────┐
 │                     Core Logic Layer                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │
-│  │   NLP    │  │   RAG    │  │ Matching │  │Explainability│   │
-│  │ Pipeline │  │ Pipeline │  │  Engine  │  │    Layer     │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────────┘   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐    │
+│  │   NLP    │  │   RAG    │  │ Matching │  │Explainability│    │
+│  │ Pipeline │  │ Pipeline │  │  Engine  │  │    Layer     │    │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────────┘    │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────────┐
 │                       Data Layer                                 │
-│  ┌────────────────┐  ┌────────────┐  ┌───────────────────┐     │
-│  │  PostgreSQL    │  │  pgvector  │  │  In-Memory Cache  │     │
-│  │  (Neon)        │  │ (Vectors)  │  │  (LRU + Metrics)  │     │
-│  └────────────────┘  └────────────┘  └───────────────────┘     │
+│  ┌────────────────┐  ┌────────────┐  ┌───────────────────┐      │
+│  │  PostgreSQL    │  │  pgvector  │  │  In-Memory Cache  │      │
+│  │  (Neon)        │  │ (Vectors)  │  │  (LRU + Metrics)  │      │
+│  └────────────────┘  └────────────┘  └───────────────────┘      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,78 +43,96 @@ An AI-powered platform that analyzes how well a resume matches a job description
 | Auth | Clerk |
 | Backend | Python, FastAPI |
 | Database | PostgreSQL (Neon) + pgvector |
-| AI | OpenAI API (GPT-4o-mini, text-embedding-3-small) |
+| AI | OpenAI API (`gpt-4o-mini`, `text-embedding-3-small`) |
 | Email | Resend (feedback notifications) |
 | Frontend hosting | Vercel |
 | Backend hosting | Render |
 | CI | GitHub Actions |
 | Testing | pytest |
 
-Note: `src/ui/app.py` (Streamlit) exists in the repo from an earlier prototype but is not part of the active application - the Next.js frontend is the real UI.
+`src/ui/app.py` is a Streamlit prototype from an earlier iteration of the project. It calls the same FastAPI backend and still runs, but it is not part of the deployed application, is not covered by CI, and has no container/deploy config — the Next.js frontend is the active UI.
 
 ## Key Features
 
-### 1. RAG Pipeline
-- Section-aware chunking (512 tokens, 50 token overlap)
-- OpenAI text-embedding-3-small (1536 dimensions)
-- pgvector for vector similarity search
-- Cosine similarity retrieval with configurable threshold
+### RAG Pipeline
+- Section-aware document chunking: whole sections are kept intact when they fit in one chunk; larger sections are split with sentence-boundary-aware overlap (`src/rag/chunker.py`)
+- Chunk size / overlap are configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP` settings (documented default: 512 tokens / 50 token overlap, approximated at 4 characters per token)
+- Embeddings via OpenAI `text-embedding-3-small` (1536 dimensions), batched in groups of 20
+- Retrieval via pgvector cosine distance (`<=>` operator), filtered by a configurable similarity threshold and `top_k`
 
-### 2. Hybrid Matching Engine
-- Exact, normalized, and phrase-based keyword matching
-- Embedding-based semantic similarity scoring
-- Category weighting (core skills weighted higher than supporting)
-- False-equivalence guardrails (e.g. "Java" is never matched against "JavaScript")
-- `score = 0.4 × keyword + 0.4 × semantic + 0.2 × category`
+### Hybrid Matching Engine
+Skills are matched in layered order, each layer only attempting skills the previous one didn't resolve:
+1. Alternative-group matching (JD skill satisfied by any one of several acceptable options)
+2. Exact string match
+3. Deterministic normalization (case/punctuation/version-suffix stripping)
+4. A small hardcoded alias table (`js`/`ts`/`py` and similar)
+5. Substring phrase matching, blocked by an explicit false-equivalence list (e.g. "Java" never matches "JavaScript"; "React" never matches "React Native")
+6. LLM-derived semantic canonicalization, accepted only above a 0.80 confidence threshold and only if the LLM's cited evidence can be traced back to actual resume text
+7. RAG-retrieved evidence above the similarity threshold
 
-### 3. Explainability Layer
-Every analysis includes a plain-language summary, matched skills with resume evidence snippets, missing skills with actionable tips, and honest bullet-point rewrites that never fabricate skills or metrics not already present in the original resume.
+Overall score:
+```
+unified_coverage = (exact_and_normalized_matches + 0.85 × semantic_and_rag_matches) / total_jd_skills
+overall_score    = 0.70 × unified_coverage + 0.30 × category_score
+```
+Category weights: Core 2.0x, Technical 1.5x, Functional 1.2x, Behavioral 0.8x, Supporting 0.6x.
 
-### 4. Resume Management
-- Upload via PDF or pasted text
-- Multiple saved resumes per user with one marked "active"
-- Rename and switch between resumes
-- Skill extraction runs automatically in the background on upload
+The engine also accepts `keyword_weight` / `semantic_weight` / `category_weight` constructor parameters (and exposes them in the response as `weights_used`), but the score formula above does not currently consume them — they have no effect on the computed `overall_score`.
 
-### 5. Skill Validation Quizzes
-- AI-generated multiple-choice quizzes per missing skill, three difficulty levels (easy/medium/hard)
-- Skills auto-resolve (no longer tracked as a gap) once they appear in a newer resume
-- Progress persists per skill; any level can be retaken at any time
+### Explainability Layer
+Each analysis includes an LLM-generated plain-language summary, matched skills with resume evidence snippets, missing skills, and rewritten resume bullets. The bullet-rewrite prompt is constrained to not introduce skills or metrics absent from the original resume, and a regex-based verification step checks that cited evidence snippets actually appear in the source text. If the OpenAI call fails, both the explanation and bullet rewrites fall back to a deterministic, non-LLM summary rather than failing the request.
 
-### 6. Feedback
-- In-app feedback/suggestion form, stored in the database and emailed to the site owner via Resend
+### Resume Management
+- Upload via pasted text or PDF (parsed with PyPDF2)
+- Multiple saved resumes per user, one marked active
+- Rename, switch, and delete
+- Skill extraction runs as a background task on upload
 
-### 7. Caching Layer
-- LRU cache with TTL for JD parsing, resume parsing, and skill/JD normalization results
+### Skill Validation Quizzes
+- LLM-generated multiple-choice quizzes per missing skill, three difficulty levels
+- Skill progress persists per user/skill; quizzes can be retaken
+- A resume-skills endpoint has retry-with-backoff logic (3 attempts) if background extraction hasn't completed yet
+
+### Feedback
+In-app form, stored in the database, and emailed to a configured address via Resend.
+
+### Caching
+In-process LRU cache with TTL, used for JD parsing, resume parsing, and skill/JD semantic normalization. This cache is a single-process, in-memory dictionary — it does not share state across multiple backend instances/workers and resets on every restart or deploy. A `cache_entries` database table exists in the schema but is not written to by the current cache implementation.
 
 ## Project Structure
 
 ```
 ai_job_copilot/
-├── .github/workflows/ci_cd.yml    # CI pipeline
+├── .github/workflows/ci_cd.yml    # CI: lint, test, build validation
 ├── docs/
 │   ├── architecture.md
 │   └── database_schema.md
-├── frontend/                      # Next.js app (the real UI)
+├── frontend/                      # Next.js app (the active UI)
 │   ├── app/(app)/                 # Home, Resume, Analyze, Skills, Dashboard, Feedback
+│   ├── app/sign-in/, app/sign-up/ # Clerk auth pages
 │   ├── components/
-│   └── lib/api.ts                 # Backend API client
+│   ├── lib/api.ts                 # Backend API client
+│   ├── proxy.ts                   # Clerk middleware (route protection)
+│   └── next.config.ts             # /backend/* rewrite to BACKEND_URL
 ├── src/
 │   ├── api/
-│   │   ├── main.py                # FastAPI entry point
-│   │   ├── auth.py                # Clerk JWT verification
-│   │   ├── routes/                # analysis, quiz, users/feedback
+│   │   ├── main.py                # FastAPI entry point, CORS, rate limiting, error handlers
+│   │   ├── auth.py                # Clerk JWT verification (JWKS, RS256)
+│   │   ├── routes/                # analysis, quiz, users, feedback
 │   │   └── schemas/
-│   ├── core/                      # config, logging, exceptions, email
-│   ├── database/                  # SQLAlchemy models, session
-│   ├── nlp/                       # parsing, skill extraction, normalization
-│   ├── rag/                       # chunking, embeddings, retrieval
+│   ├── core/                      # config, logging, exceptions, rate limiting
+│   ├── database/                  # SQLAlchemy models, session, init
+│   ├── nlp/                       # parsing, LLM skill extraction, normalization
+│   ├── rag/                       # chunking, embeddings, pgvector retrieval
 │   ├── matching/                  # scoring engine, explainability
-│   ├── evaluation/                # evaluation framework, feedback
+│   ├── evaluation/                # fixed-sample eval harness, feedback CRUD
 │   ├── cache/
-│   └── ui/                        # legacy Streamlit prototype (unused)
+│   └── ui/                        # Streamlit prototype (not part of the deployed app)
 ├── tests/
+│   ├── unit/
+│   └── integration/
 ├── render.yaml                    # Render deploy blueprint (backend)
+├── runtime.txt                    # Pins Python 3.11.9 for Render
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -123,7 +141,7 @@ ai_job_copilot/
 ## Setup & Installation
 
 ### Prerequisites
-- Python 3.11+
+- Python 3.11 (pinned; newer versions break the `pandas==2.1.3` build — see note below)
 - Node.js 20+
 - PostgreSQL with the pgvector extension (Neon works well)
 - OpenAI API key
@@ -167,9 +185,9 @@ cp .env.local.example .env.local   # fill in your Clerk publishable/secret keys
 npm run dev
 ```
 
-The frontend proxies `/backend/*` requests to the FastAPI server (configurable via the `BACKEND_URL` env var for production).
+The frontend proxies `/backend/*` requests to the FastAPI server (`BACKEND_URL` env var controls the target; defaults to `http://127.0.0.1:8000` locally).
 
-Note: `runtime.txt` pins the backend to Python 3.11.9 for Render deploys. Newer Python versions (3.13+) break the `pandas==2.1.3` build, so keep this pin if you fork/redeploy.
+Note: `runtime.txt` pins the backend to Python 3.11.9 for Render deploys. Newer Python versions (3.13+) break the `pandas==2.1.3` build's Cython extensions, so keep this pin if you fork/redeploy.
 
 ### 6. Run tests
 
@@ -181,55 +199,65 @@ pytest --cov=src --cov-report=html
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/resume/upload` | Upload and parse a pasted-text resume |
-| POST | `/resume/upload-file` | Upload and parse a PDF resume |
-| POST | `/job/upload` | Upload and parse a job description |
-| POST | `/analysis/run` | Start an ATS analysis (background job) |
-| GET | `/analysis/{analysis_id}` | Poll for analysis results |
-| POST | `/quiz/start` | Generate a skill validation quiz |
-| POST | `/quiz/submit` | Submit quiz answers for grading |
-| POST | `/feedback` | Submit user feedback/suggestions |
-| GET | `/users/me` | Current user profile |
-| GET | `/users/me/resumes` | List saved resumes |
-| DELETE | `/users/me/resumes/{resume_id}` | Delete a resume |
-| POST | `/users/me/resumes/{resume_id}/activate` | Set a resume as active |
-| PATCH | `/users/me/resumes/{resume_id}` | Rename a resume |
-| GET | `/users/me/resume-skills` | Skills extracted from the active resume |
-| GET | `/users/me/skills` | Skill validation progress (quiz history) |
-| DELETE | `/users/me/skills` | Clear all tracked skill progress |
-| DELETE | `/users/me/skills/{skill_name}` | Remove one tracked skill |
-| GET | `/users/me/history` | Past analysis history |
-| GET | `/users/me/feedback` | Current user's submitted feedback |
-| GET | `/health` | Health check |
-| GET | `/metrics/cache` | Cache performance metrics |
+| Method | Endpoint | Auth | Rate limit | Description |
+|--------|----------|------|------------|-------------|
+| POST | `/resume/upload` | optional | 10/min | Upload and parse a pasted-text resume |
+| POST | `/resume/upload-file` | optional | 10/min | Upload and parse a PDF resume |
+| POST | `/job/upload` | none | 15/min | Upload and parse a job description |
+| POST | `/analysis/run` | optional | 10/min | Start an ATS analysis (background job) |
+| GET | `/analysis/{analysis_id}` | none | none | Poll for analysis results |
+| GET | `/history` | none | none | List analyses (not scoped to a user — see Known Limitations) |
+| POST | `/quiz/start` | none | 15/min | Generate a skill validation quiz |
+| POST | `/quiz/submit` | none | none | Submit quiz answers for grading |
+| POST | `/feedback` | optional | 5/min | Submit user feedback/suggestions |
+| GET | `/users/me` | required | none | Current user profile |
+| GET | `/users/me/resumes` | required | none | List saved resumes |
+| DELETE | `/users/me/resumes/{resume_id}` | required | none | Delete a resume |
+| POST | `/users/me/resumes/{resume_id}/activate` | required | none | Set a resume as active |
+| PATCH | `/users/me/resumes/{resume_id}` | required | none | Rename a resume |
+| GET | `/users/me/resume-skills` | required | none | Skills extracted from the active resume |
+| GET | `/users/me/skills` | required | none | Skill validation progress |
+| DELETE | `/users/me/skills` | required | none | Clear all tracked skill progress |
+| DELETE | `/users/me/skills/{skill_name}` | required | none | Remove one tracked skill |
+| GET | `/users/me/history` | required | none | Current user's analysis history |
+| GET | `/users/me/feedback` | required | none | Current user's submitted feedback |
+| GET | `/health` | none | none | Health check |
+| GET | `/metrics/cache` | none | none | In-process cache hit/miss metrics |
+
+"Optional" auth means the endpoint accepts an anonymous caller and also accepts a valid Clerk token if present. "Required" returns 401 without one.
 
 ## Database Schema
 
-PostgreSQL schema, key tables:
-- `users` - user accounts (linked to Clerk identity)
-- `resumes` - uploaded resumes, parsed sections, extracted skills, active flag
-- `job_descriptions` - parsed job requirements
-- `ats_analyses` - analysis results, scores, evidence, optimized bullets
-- `document_chunks` - RAG chunks with pgvector embeddings
-- `quiz_results` - generated quizzes and grading
-- `skill_progress` - per-user, per-skill quiz progress and resolution state
-- `user_feedback` - feedback/suggestion submissions
-- `cache_entries` - cache hit/miss metrics
+PostgreSQL, SQLAlchemy models, UUID primary keys throughout:
+- `users` — accounts linked to a Clerk identity
+- `resumes` — uploaded resumes, parsed sections, active flag
+- `job_descriptions` — parsed job requirements
+- `ats_analyses` — analysis results, scores, matched/missing skills, evidence, optimized bullets
+- `document_chunks` — RAG chunks with pgvector embeddings
+- `quiz_results` — generated quizzes and grading
+- `skill_progress` — per-user, per-skill quiz progress and resolution state
+- `user_feedback` — feedback/suggestion submissions
+
+Two additional tables are defined but not currently used by any route: `analysis_feedback` (a more structured feedback/score-revision model, superseded by `user_feedback`) and `cache_entries` (intended for a DB-backed cache; the live cache is in-memory only).
 
 ## Scoring Methodology
 
 ```
-Overall Score = (0.4 × Keyword Score) + (0.4 × Semantic Score) + (0.2 × Category Score)
+unified_coverage = (exact_and_normalized_matches + 0.85 × semantic_and_rag_matches) / total_jd_skills
+overall_score    = 0.70 × unified_coverage + 0.30 × category_score
 ```
 
-Category weights: Core 2.0x, Technical 1.5x, Functional 1.2x, Behavioral 0.8x, Supporting 0.6x.
+Category weights: Core 2.0x, Technical 1.5x, Functional 1.2x, Behavioral 0.8x, Supporting 0.6x. See [Hybrid Matching Engine](#hybrid-matching-engine) above for the match-layer order.
 
 ## Known Limitations
 
-- LLM-generated quiz answer keys are not always correct. The prompt asks the model to independently derive and self-verify each answer before finalizing it, and generation runs at low temperature (0.2) to reduce inconsistency, but this is a mitigation, not a guarantee.
-- Rate limiting is in place (10-15 requests/minute per IP on OpenAI-backed endpoints, 5/minute on feedback) to bound API cost on a public deployment, but it is a basic in-memory limiter keyed by IP address, not a production-grade distributed rate limiter (e.g. no shared state across multiple backend instances).
+- **LLM-generated quiz answer keys are not always correct.** The prompt asks the model to independently derive and self-verify each answer before finalizing it, and generation runs at low temperature (0.2) to reduce inconsistency, but this is a mitigation, not a guarantee.
+- **Rate limiting is IP-based and in-memory, not distributed.** It uses `slowapi` keyed by client IP with no shared state across backend instances, so it would under-count requests behind a shared IP or across multiple server processes.
+- **`GET /analysis/{analysis_id}` and `GET /history` have no authentication or ownership scoping.** Any caller can retrieve any analysis by ID, and `/history` returns analyses across all users rather than filtering by caller. `GET /users/me/history` is the correctly-scoped, authenticated equivalent.
+- **Clerk JWT verification does not check the audience claim** (`verify_aud=False`). Signature and expiry are verified; token scoping by audience is not.
+- **Unhandled exceptions return the exception type and message directly to the client** (`{"detail": "SomeError: message"}`), which can leak internal error details rather than a generic message.
+- **The in-memory cache is single-process.** It does not persist across restarts/deploys and does not share state across multiple backend workers or instances.
+- **The evaluation harness in `src/evaluation/evaluator.py` scores against two hardcoded sample resume/JD pairs**, not real analysis history — it's a fixed regression check, not a live quality metric.
 
 ## License
 
